@@ -5,7 +5,7 @@
 #include "texture_mapping.h"
 
 // const std::string modelPath = "../media/sphere.obj";
-const std::string modelPath = "C:/graphic/CG Final/media/sphere.obj";
+const std::string modelPath = "../media/sphere.obj";
 
 const std::string earthTexturePath = "../media/earthmap.jpg";
 const std::string planetTexturePath = "../media/planet_Quom1200.png";
