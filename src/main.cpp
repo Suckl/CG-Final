@@ -1,10 +1,10 @@
 #include <iostream>
 #include <cstdlib>
-#include "texture_mapping.h"
+#include "test.h"
 
 Options getOptions(int argc, char* argv) {
 	Options options;
-	options.windowTitle = "Texture Mapping";
+	options.windowTitle = "Test";
 	options.windowWidth = 1280;
 	options.windowHeight = 720;
 	options.windowResizable = false;
