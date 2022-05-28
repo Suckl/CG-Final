@@ -20,11 +20,11 @@ struct Material {
 };
 
 
-class TextureMapping : public Application {
+class Test : public Application {
 public:
-	TextureMapping(const Options& options);
+	Test(const Options& options);
 	
-	~TextureMapping();
+	~Test();
 
 private:
 	std::unique_ptr<Model> _sphere;
@@ -45,4 +45,6 @@ private:
 	void handleInput() override;
 
 	void renderFrame() override;
+
+	void userControl();
 };

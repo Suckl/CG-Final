@@ -20,7 +20,7 @@ int main(int argc, char* argv) {
 	Options options = getOptions(argc, argv);
 
 	try {
-		TextureMapping app(options);
+		Test app(options);
 		app.run();
 	} catch (std::exception& e) {
 		std::cerr << e.what() << std::endl;

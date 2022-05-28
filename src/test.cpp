@@ -18,7 +18,7 @@ const std::vector<std::string> skyboxTexturePaths = {
 	"./../media/starfield/Back_Tex.jpg"
 };
 
-TextureMapping::TextureMapping(const Options& options): Application(options) {
+Test::Test(const Options& options): Application(options) {
 	// init model
 	_sphere.reset(new Model(modelPath));
 	_sphere->scale = glm::vec3(1.0f, 1.0f, 1.0f);
@@ -54,13 +54,13 @@ TextureMapping::TextureMapping(const Options& options): Application(options) {
 	ImGui_ImplOpenGL3_Init();
 }
 
-TextureMapping::~TextureMapping() {
+Test::~Test() {
 	ImGui_ImplOpenGL3_Shutdown();
 	ImGui_ImplGlfw_Shutdown();
 	ImGui::DestroyContext();
 }
 
-void TextureMapping::initShader() {
+void Test::initShader() {
 	const char* vsCode =
 		"#version 330 core\n"
 		"layout(location = 0) in vec3 aPosition;\n"
@@ -108,10 +108,10 @@ void TextureMapping::initShader() {
 		"}\n"
 
 		"void main() {\n"
-		//"	vec3 normal = normalize(fNormal);\n"
-		//"	vec3 color0 = calcDirectionalLight(normal);\n"
-		//"	color = vec4(color0, 1.0f);\n"
-		"	color = texture(mapKd, fTexCoord);\n"
+		"	vec3 normal = normalize(fNormal);\n"
+		"	vec3 color0 = calcDirectionalLight(normal);\n"
+		"	color = vec4(color0, 1.0f);\n"
+		//"	color = texture(mapKd, fTexCoord);\n"
 		"}\n";
 
 	_Shader.reset(new GLSLProgram);
@@ -120,14 +120,16 @@ void TextureMapping::initShader() {
 	_Shader->link();
 }
 
-void TextureMapping::handleInput() {
+void Test::handleInput() {
 	const float angluarVelocity = 0.1f;
 	const float angle = angluarVelocity * static_cast<float>(_deltaTime);
 	const glm::vec3 axis = glm::vec3(0.0f, 1.0f, 0.0f);
 	_sphere->rotation = glm::angleAxis(angle, axis) * _sphere->rotation;
+
+	userControl();
 }
 
-void TextureMapping::renderFrame() {
+void Test::renderFrame() {
 	// some options related to imGUI
 	static bool wireframe = false;
 	
@@ -159,9 +161,9 @@ void TextureMapping::renderFrame() {
 		_Shader->setMat4("model", _sphere->getModelMatrix());
 
 		// // 3. transfer light attributes to gpu
-		// _Shader->setVec3("light.direction", _light->getFront());
-		// _Shader->setVec3("light.color", _light->color);
-		// _Shader->setFloat("light.intensity", _light->intensity);
+		_Shader->setVec3("light.direction", _light->getFront());
+		_Shader->setVec3("light.color", _light->color);
+		_Shader->setFloat("light.intensity", _light->intensity);
 
 		// 4. transfer materials to gpu
 		_Material->mapKd->bind();
@@ -203,4 +205,25 @@ void TextureMapping::renderFrame() {
 
 	ImGui::Render();
 	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+}
+
+void Test::userControl()
+{
+	constexpr float cameraMoveSpeed = 5.0f;
+
+	if (_keyboardInput.keyStates[GLFW_KEY_W] != GLFW_RELEASE) {
+		_camera->position += _camera->getFront() * cameraMoveSpeed * _deltaTime;
+	}
+
+	if (_keyboardInput.keyStates[GLFW_KEY_A] != GLFW_RELEASE) {
+		_camera->position -= _camera->getRight() * cameraMoveSpeed * _deltaTime;
+	}
+
+	if (_keyboardInput.keyStates[GLFW_KEY_S] != GLFW_RELEASE) {
+		_camera->position -= _camera->getFront() * cameraMoveSpeed * _deltaTime;
+	}
+
+	if (_keyboardInput.keyStates[GLFW_KEY_D] != GLFW_RELEASE) {
+		_camera->position += _camera->getRight() * cameraMoveSpeed * _deltaTime;
+	}
 }
