@@ -1,7 +1,7 @@
 #include <iostream>
 #include <cstdlib>
-#include "texture_mapping.h"
-
+#include "./base/scene.h"
+// #include"texture_mapping.h"
 Options getOptions(int argc, char* argv) {
 	Options options;
 	options.windowTitle = "Texture Mapping";
@@ -20,7 +20,7 @@ int main(int argc, char* argv) {
 	Options options = getOptions(argc, argv);
 
 	try {
-		TextureMapping app(options);
+		Scene app(options);
 		app.run();
 	} catch (std::exception& e) {
 		std::cerr << e.what() << std::endl;
