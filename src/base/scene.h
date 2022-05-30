@@ -21,10 +21,17 @@ enum class CameraMode {
 };
 
 struct ObjectList{
-    std::vector<std::unique_ptr<Model>> ModelList;
-    std::vector<std::shared_ptr<Texture2D>> Texture2DList;
-    // 针对每个物体单独设置Shader，现在看来意义不大
-    // std::vector<std::shared_ptr<GLSLProgram>> ShaderList;
+    std::vector<std::string> objectname;//物体名称
+    std::vector<bool> visible;//可见性
+    std::vector<std::unique_ptr<Model>> ModelList;//物体模型
+    std::vector<bool> color_flag;//应用纹理还是颜色
+    std::vector<int> TextureIndex;//纹理坐标
+    std::vector<glm::vec3> Color;//颜色坐标
+    std::vector<float> roughness;//粗糙度
+};
+struct TextureList{
+    std::vector<std::shared_ptr<Texture2D>> texture;
+    std::vector<std::string> texturename;
 };
 
 class Scene:public Application{
@@ -34,6 +41,7 @@ public:
 private:
     // 物体清单，分别录入了模型纹理以及对应的Shader
     ObjectList _objectlist;
+    TextureList _texturelist;
     std::vector<std::unique_ptr<Light>> LightList;
     // 储存了所有类型的Shader，如果之后创建了许多Shader的话可以用enum来从里面取，现在还没有
     // std::vector<std::shared_ptr<GLSLProgram>> AllShader;
@@ -50,8 +58,9 @@ private:
 
     void initSimpleShader();
     void drawList();
-    // void addModel() const;
-    // void export() const;
+    bool addTexture(const std::string filename,const std::string name);
+    bool addModel(const std::string filename,const std::string name);
+    // void export();
     void drawGUI() ;
     void handleInput() override;
 	void renderFrame() override;
