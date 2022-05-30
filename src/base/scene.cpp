@@ -26,8 +26,9 @@ Scene::Scene(const Options& options): Application(options) {
     LightList.push_back(nullptr);
 	LightList[0].reset(new DirectionalLight());
 	LightList[0]->rotation = glm::angleAxis(glm::radians(45.0f), -glm::vec3(1.0f, 1.0f, 1.0f));
+    LightList[0]->position = glm::vec3(3.0f,0.0f,0.0f);
 	// init shaders
-	initSimpleShader();
+    initPBRShader();
 	// init imgui
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
@@ -42,40 +43,11 @@ Scene::~Scene() {
 	ImGui::DestroyContext();
 }
 
-void Scene::initSimpleShader() {
-	const char* vsCode =
-		"#version 330 core\n"
-		"layout(location = 0) in vec3 aPosition;\n"
-		"layout(location = 1) in vec3 aNormal;\n"
-		"layout(location = 2) in vec2 aTexCoord;\n"
-		"out vec2 fTexCoord;\n"
-        "out vec4 fcolor;\n"
-		"uniform mat4 projection;\n"
-		"uniform mat4 view;\n"
-		"uniform mat4 model;\n"
-        "uniform vec3 color\n;"
-
-		"void main() {\n"
-		"	fTexCoord = aTexCoord;\n"
-        "   fcolor = vec4(color,1.0);\n"
-		"	gl_Position = projection * view * model * vec4(aPosition, 1.0f);\n"
-		"}\n";
-
-	const char* fsCode =
-		"#version 330 core\n"
-        "in vec4 fcolor;\n"
-		"in vec2 fTexCoord;\n"
-		"out vec4 color;\n"
-		"uniform sampler2D mapKd;\n"
-		"void main() {\n"
-		"	color = fcolor*texture(mapKd, fTexCoord);\n"
-		// "	color=vec4(1.0);"
-		"}\n";
-
-	_simpleShader.reset(new GLSLProgram); 
-	_simpleShader->attachVertexShader(vsCode);
-	_simpleShader->attachFragmentShader(fsCode);
-	_simpleShader->link();
+void Scene::initPBRShader(){
+    _pbrShader.reset(new GLSLProgram); 
+	_pbrShader->attachVertexShaderFromFile("../../src/shaders/PBRvs.glsl");
+	_pbrShader->attachFragmentShaderFromFile("../../src/shaders/PBRfs.glsl");
+	_pbrShader->link();
 }
 
 void Scene::handleInput() {
@@ -174,6 +146,7 @@ bool Scene::addModel(const std::string filename,const std::string name){
     _objectlist.TextureIndex.push_back(0);
     _objectlist.color_flag.push_back(false);
     _objectlist.roughness.push_back(0.5f);
+    _objectlist.metallic.push_back(0.5f);
 }
 bool Scene::addTexture(const std::string filename,const std::string name){
     _texturelist.texturename.push_back(name);
@@ -181,25 +154,32 @@ bool Scene::addTexture(const std::string filename,const std::string name){
 	_texturelist.texture[_texturelist.texture.size()-1].reset(new Texture2D(filename));
 }
 
-// 之后还需要根据ShadowMode分别设置，现在只是简化
 void Scene::drawList(){
     switch(_ShadowRenderMode){
         case ShadowRenderMode::None:
         for(int i=0;i<_objectlist.ModelList.size();i++){
             if(!_objectlist.visible[i]) continue;
-            _simpleShader->use();
+            _pbrShader->use();
             const glm::mat4 projection = _camera->getProjectionMatrix();
             const glm::mat4 view = _camera->getViewMatrix();
-            _simpleShader->setMat4("projection", projection);
-            _simpleShader->setMat4("view", view);
-            _simpleShader->setMat4("model", _objectlist.ModelList[i]->getModelMatrix());
-            if(_objectlist.color_flag[i]) _simpleShader->setVec3("color",_objectlist.Color[i]);
-            else _simpleShader->setVec3("color",glm::vec3(1.0f));
+            _pbrShader->setMat4("projection", projection);
+            _pbrShader->setMat4("view", view);
+            _pbrShader->setMat4("model", _objectlist.ModelList[i]->getModelMatrix());
+            _pbrShader->setVec3("uLightDir",glm::vec3(1.0f,1.0f,1.0f));
+            _pbrShader->setVec3("uCameraPos",_camera->position);
+            _pbrShader->setVec3("uLightRadiance",glm::vec3(2.0f));
+            _pbrShader->setFloat("uRoughness",_objectlist.roughness[i]);
+            _pbrShader->setFloat("uMetallic",_objectlist.metallic[i]);
+            if(_objectlist.color_flag[i]) _pbrShader->setVec3("uColor",_objectlist.Color[i]);
+            else _pbrShader->setVec3("uColor",glm::vec3(1.0f));
             if(!_objectlist.color_flag[i]&&_texturelist.texture[_objectlist.TextureIndex[i]]!=nullptr){
                 glActiveTexture(GL_TEXTURE0);
                 _texturelist.texture[_objectlist.TextureIndex[i]]->bind();
+                _objectlist.ModelList[i]->draw();
+                _texturelist.texture[_objectlist.TextureIndex[i]]->unbind();
             }
-            _objectlist.ModelList[i]->draw();
+            else _objectlist.ModelList[i]->draw();
+            
         }
         break;
     }
@@ -322,12 +302,15 @@ void Scene::drawGUI()  {
                     float scale[3] = {_objectlist.ModelList[i]->scale.x,_objectlist.ModelList[i]->scale.y,_objectlist.ModelList[i]->scale.z};
                     bool color_flag=_objectlist.color_flag[i];
                     float roughness=_objectlist.roughness[i];
+                    float metallic=_objectlist.metallic[i];
                     ImGui::Checkbox("Use color instead of texture",&color_flag);
                     _objectlist.color_flag[i]=color_flag;
                     ImGui::ColorEdit3("Object Color",(float*)&color);
                     _objectlist.Color[i]=glm::vec3(color.x,color.y,color.z);
                     ImGui::SliderFloat("Roughness",&roughness,0.0f,1.0f,"%.2f");
                     _objectlist.roughness[i]=roughness;
+                    ImGui::SliderFloat("Metallic",&metallic,0.0f,1.0f,"%.2f");
+                    _objectlist.metallic[i]=metallic;
                     ImGui::DragFloat3("Scale",scale,0.005f,0.0f,10.0f,"%.3f");ImGui::SameLine();
                     if(ImGui::Button("Proportional base scale.x")){
                         scale[2]=scale[1]=scale[0];  

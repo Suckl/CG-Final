@@ -28,6 +28,7 @@ struct ObjectList{
     std::vector<int> TextureIndex;//纹理坐标
     std::vector<glm::vec3> Color;//颜色坐标
     std::vector<float> roughness;//粗糙度
+    std::vector<float> metallic;//金属度
 };
 struct TextureList{
     std::vector<std::shared_ptr<Texture2D>> texture;
@@ -43,10 +44,7 @@ private:
     ObjectList _objectlist;
     TextureList _texturelist;
     std::vector<std::unique_ptr<Light>> LightList;
-    // 储存了所有类型的Shader，如果之后创建了许多Shader的话可以用enum来从里面取，现在还没有
-    // std::vector<std::shared_ptr<GLSLProgram>> AllShader;
-    // 测试用的Shader
-    std::shared_ptr<GLSLProgram> _simpleShader;
+    std::shared_ptr<GLSLProgram> _pbrShader;
     std::unique_ptr<PerspectiveCamera> _camera;
     enum ShadowRenderMode _ShadowRenderMode=ShadowRenderMode::None;
     enum ScreenShotMode _ScreenShotMode=ScreenShotMode::Normal;
@@ -55,13 +53,12 @@ private:
     bool mouse_capture_flag=false;
     const float _cameraMoveSpeed = 10.0f;
     const float cameraRotateSpeed = 0.1f;
-
-    void initSimpleShader();
+    void initPBRShader();
     void drawList();
     bool addTexture(const std::string filename,const std::string name);
     bool addModel(const std::string filename,const std::string name);
     // void export();
-    void drawGUI() ;
+    void drawGUI();
     void handleInput() override;
 	void renderFrame() override;
 };
