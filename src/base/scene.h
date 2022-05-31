@@ -43,20 +43,26 @@ private:
     // 物体清单，分别录入了模型纹理以及对应的Shader
     ObjectList _objectlist;
     TextureList _texturelist;
+    
     std::vector<std::unique_ptr<Light>> LightList;
     std::shared_ptr<GLSLProgram> _pbrShader;
     std::unique_ptr<PerspectiveCamera> _camera;
+    std::unique_ptr<SkyBox> _skybox;
+
     enum ShadowRenderMode _ShadowRenderMode=ShadowRenderMode::None;
     enum ScreenShotMode _ScreenShotMode=ScreenShotMode::Normal;
     enum CameraMode _CameraMode=CameraMode::FPS;
+
     bool collision_flag=false;
     bool mouse_capture_flag=false;
     const float _cameraMoveSpeed = 10.0f;
     const float cameraRotateSpeed = 0.1f;
+
     void initPBRShader();
     void drawList();
     bool addTexture(const std::string filename,const std::string name);
     bool addModel(const std::string filename,const std::string name);
+
     // void export();
     void drawGUI();
     void handleInput() override;

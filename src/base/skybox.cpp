@@ -119,6 +119,17 @@ void SkyBox::draw(const glm::mat4& projection, const glm::mat4& view) {
     // write your code here
     // -----------------------------------------------
     // ...
+    glDepthFunc(GL_LEQUAL);
+    _shader->use();
+    _shader->setMat4("projection", projection);
+    _shader->setMat4("view", glm::mat4(glm::mat3(view)));
+
+    glBindVertexArray(_vao);
+    glActiveTexture(GL_TEXTURE0);
+    _texture->bind();
+    glDrawArrays(GL_TRIANGLES, 0, 36);
+    glBindVertexArray(0);
+    glDepthFunc(GL_LESS);
     // -----------------------------------------------
 }
 
