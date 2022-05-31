@@ -1,10 +1,11 @@
 #include <iostream>
 #include <cstdlib>
 #include "./base/scene.h"
-// #include"texture_mapping.h"
+
 Options getOptions(int argc, char* argv) {
 	Options options;
 	options.windowTitle = "CG Final!";
+
 	options.windowWidth = 1280;
 	options.windowHeight = 720;
 	options.windowResizable = false;
