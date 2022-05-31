@@ -5,13 +5,22 @@ const std::string modelPath = "../media/sphere.obj";
 const std::string earthTexturePath = "../media/earthmap.jpg";
 const std::string planetTexturePath = "../media/planet_Quom1200.png";
 
+const std::vector<std::string> skyboxTexturePaths = {
+	"../../media/starfield/Right_Tex.jpg",
+	"../../media/starfield/Left_Tex.jpg",
+	"../../media/starfield/Up_Tex.jpg",
+	"../../media/starfield/Down_Tex.jpg",
+	"../../media/starfield/Front_Tex.jpg",
+	"../../media/starfield/Back_Tex.jpg"
+};
+
 Scene::Scene(const Options& options): Application(options) {
 
     
 	// init model
     addModel(modelPath,"earth");
-	addModel(modelPath,"planet");
-	_objectlist.ModelList[1]->scale = glm::vec3(5.0f, 5.0f, 5.0f);
+	//addModel(modelPath,"planet");
+	//_objectlist.ModelList[1]->scale = glm::vec3(5.0f, 5.0f, 5.0f);
 
 	// init materials
     addTexture(earthTexturePath,"earthTexture");
@@ -27,6 +36,10 @@ Scene::Scene(const Options& options): Application(options) {
 	LightList[0].reset(new DirectionalLight());
 	LightList[0]->rotation = glm::angleAxis(glm::radians(45.0f), -glm::vec3(1.0f, 1.0f, 1.0f));
     LightList[0]->position = glm::vec3(3.0f,0.0f,0.0f);
+
+	// init skybox
+	_skybox.reset(new SkyBox(skyboxTexturePaths));
+
 	// init shaders
     initPBRShader();
 	// init imgui
@@ -133,6 +146,10 @@ void Scene::renderFrame() {
 	const glm::mat4 view = _camera->getViewMatrix();
 	// draw 
 	drawList();
+    
+    // draw skybox
+	_skybox->draw(projection, view);
+    
     drawGUI();
 }
 
