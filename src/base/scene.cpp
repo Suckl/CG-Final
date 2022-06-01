@@ -1,5 +1,6 @@
 
 #include"scene.h"
+#include"scene_load.h"
 
 const std::string modelPath = "../media/sphere.obj";
 const std::string earthTexturePath = "../media/earthmap.jpg";
@@ -18,13 +19,14 @@ Scene::Scene(const Options& options): Application(options) {
 
     
 	// init model
-    addModel(modelPath,"earth");
+    SceneLoad();
+    // addModel(modelPath,"earth");
 	//addModel(modelPath,"planet");
 	//_objectlist.ModelList[1]->scale = glm::vec3(5.0f, 5.0f, 5.0f);
 
 	// init materials
-    addTexture(earthTexturePath,"earthTexture");
-    addTexture(planetTexturePath,"planetTexture");
+    // addTexture(earthTexturePath,"earthTexture");
+    // addTexture(planetTexturePath,"planetTexture");
 
 	// init camera
 	_camera.reset(new PerspectiveCamera(
@@ -154,6 +156,7 @@ void Scene::renderFrame() {
 }
 
 bool Scene::addModel(const std::string filename,const std::string name){
+    _objectlist.filepath.push_back(filename);
     _objectlist.ModelList.push_back(nullptr);
     _objectlist.objectname.push_back(name);
     _objectlist.ModelList[_objectlist.ModelList.size()-1].reset(new Model(filename));
@@ -165,7 +168,9 @@ bool Scene::addModel(const std::string filename,const std::string name){
     _objectlist.roughness.push_back(0.5f);
     _objectlist.metallic.push_back(0.5f);
 }
+
 bool Scene::addTexture(const std::string filename,const std::string name){
+    _texturelist.filepath.push_back(filename);
     _texturelist.texturename.push_back(name);
     _texturelist.texture.push_back(nullptr);
 	_texturelist.texture[_texturelist.texture.size()-1].reset(new Texture2D(filename));
@@ -260,135 +265,9 @@ void Scene::drawGUI()  {
         ImGui::Checkbox("wireframe", &wireframe);
 		ImGui::End();
 	}
-    if(help_flags){
-        ImGui::Begin("Helps", &help_flags);
-        ImGui::Text("This is something could give you a help.");
-        if (ImGui::Button("Close because I know how to use."))
-            help_flags = false;
-        ImGui::End();
-    }
-    if(file_flags){
-        static char loadname[128] = "Type your file/object name here";
-        static char filepath[128] = "Type your file path acurrately!";
-        ImGui::Begin("File Window", &file_flags);
-        ImGui::Text("In this Window, you can load OBJ files or textures with filepath.");
-        ImGui::Text("You can still export all the scene to OBJ files");
-        ImGui::NewLine();
-        ImGui::Separator();
-        ImGui::InputText("input file path", filepath, IM_ARRAYSIZE(filepath));
-        ImGui::InputText("input file name", loadname, IM_ARRAYSIZE(loadname));
-        if(ImGui::Button("Load OBJ file")){
-            std::string filename =filepath;
-            std::string name=loadname;
-            addModel(filename,loadname);
-            filename="Load Success!";
-            name=" ";
-            strcpy(loadname,name.c_str());
-            strcpy(filepath,filename.c_str());
-        }
-        ImGui::SameLine();
-        if(ImGui::Button("Load Texture file")){
-            std::string filename =filepath;
-            std::string name=loadname;
-            addTexture(filename,loadname);
-            filename="Load Success!";
-            name=" ";
-            strcpy(loadname,name.c_str());
-            strcpy(filepath,filename.c_str());
-        }
-        ImGui::Separator();
-        ImGui::Text("This will merge all the objects to a single group.");
-        ImGui::NewLine();
-        if(ImGui::Button("Export scene to OBJ")){
-            // TODO::Export scene to OBJ
-        }
-        ImGui::End();
-    }
-    if(object_flags){
-        ImGui::Begin("Object Window", &object_flags);
-        ImGui::Text("In this Window, you can view all the objects in the ");
-        ImGui::Text("scene including light.You are free to set their scales, ");
-        ImGui::Text("rotations and locations.For normal object, you can set ");
-        ImGui::Text("roughness and color.For light, you can set intensity and color.");
-        if(ImGui::CollapsingHeader("Object List")){
-            for (int i =0;i<_objectlist.ModelList.size();i++){
-                if(ImGui::TreeNode((void*)(intptr_t)i,"object %s",_objectlist.objectname[i].c_str())){
-                    ImVec4 color = ImVec4(_objectlist.Color[i].x, _objectlist.Color[i].y, _objectlist.Color[i].z,1.0f);
-                    const float rota_angle=0.05f;
-                    float position[3]={_objectlist.ModelList[i]->position.x,_objectlist.ModelList[i]->position.y,_objectlist.ModelList[i]->position.z};
-                    float scale[3] = {_objectlist.ModelList[i]->scale.x,_objectlist.ModelList[i]->scale.y,_objectlist.ModelList[i]->scale.z};
-                    bool color_flag=_objectlist.color_flag[i];
-                    float roughness=_objectlist.roughness[i];
-                    float metallic=_objectlist.metallic[i];
-                    ImGui::Checkbox("Use color instead of texture",&color_flag);
-                    _objectlist.color_flag[i]=color_flag;
-                    ImGui::ColorEdit3("Object Color",(float*)&color);
-                    _objectlist.Color[i]=glm::vec3(color.x,color.y,color.z);
-                    ImGui::SliderFloat("Roughness",&roughness,0.0f,1.0f,"%.2f");
-                    _objectlist.roughness[i]=roughness;
-                    ImGui::SliderFloat("Metallic",&metallic,0.0f,1.0f,"%.2f");
-                    _objectlist.metallic[i]=metallic;
-                    ImGui::DragFloat3("Scale",scale,0.005f,0.0f,10.0f,"%.3f");ImGui::SameLine();
-                    if(ImGui::Button("Proportional base scale.x")){
-                        scale[2]=scale[1]=scale[0];  
-                    }
-                    ImGui::DragFloat3("Position",position,0.005f,-100.0f,100.0f,"%.3f");
-                    _objectlist.ModelList[i]->scale=glm::vec3{scale[0],scale[1],scale[2]};
-                    _objectlist.ModelList[i]->position=glm::vec3{position[0],position[1],position[2]};
-                    float spacing = ImGui::GetStyle().ItemInnerSpacing.x;
-                    ImGui::PushButtonRepeat(true);
-                    ImGui::Text("Hode to rotate:   ");ImGui::SameLine();
-                    ImGui::Text("rotation-x");ImGui::SameLine();
-                    if (ImGui::ArrowButton("##left", ImGuiDir_Left)) {
-                        _objectlist.ModelList[i]->rotation =glm::normalize(glm::quat{ cos(rota_angle / 2),0.0,1.0*sin(rota_angle / 2),0.0 }*_objectlist.ModelList[i]->rotation);
-                    }
-                    ImGui::SameLine(0.0f, spacing);
-                    if (ImGui::ArrowButton("##right", ImGuiDir_Right)) {
-                        _objectlist.ModelList[i]->rotation =glm::normalize(glm::quat{ cos(rota_angle / 2),0.0,-1.0*sin(rota_angle / 2),0.0 }*_objectlist.ModelList[i]->rotation);
-                    }
-                    ImGui::SameLine();ImGui::Text("rotation-y");ImGui::SameLine();
-                    if (ImGui::ArrowButton("##left", ImGuiDir_Left)) {
-                        _objectlist.ModelList[i]->rotation =glm::normalize(glm::quat{ cos(rota_angle / 2),1.0*sin(rota_angle / 2),0.0,0.0 }*_objectlist.ModelList[i]->rotation);
-                    }
-                    ImGui::SameLine(0.0f, spacing);
-                    if (ImGui::ArrowButton("##right", ImGuiDir_Right)) {
-                        _objectlist.ModelList[i]->rotation =glm::normalize(glm::quat{ cos(rota_angle / 2),-1.0*sin(rota_angle / 2),0.0,0.0 }*_objectlist.ModelList[i]->rotation);
-                    }
-                    ImGui::SameLine();ImGui::Text("rotation-z");ImGui::SameLine();
-                    if (ImGui::ArrowButton("##left", ImGuiDir_Left)) {
-                        _objectlist.ModelList[i]->rotation =glm::normalize(glm::quat{ cos(rota_angle / 2),0.0,0.0,1.0*sin(rota_angle / 2) }*_objectlist.ModelList[i]->rotation);
-                    }
-                    ImGui::SameLine(0.0f, spacing);
-                    if (ImGui::ArrowButton("##right", ImGuiDir_Right)) {
-                        _objectlist.ModelList[i]->rotation =glm::normalize(glm::quat{ cos(rota_angle / 2),0.0,0.0,-1.0*sin(rota_angle / 2) }*_objectlist.ModelList[i]->rotation);
-                    }
-                    ImGui::PopButtonRepeat();
-                    if(!_objectlist.visible[i]&&ImGui::Button("Click me to display this object")) _objectlist.visible[i]=true;
-                    else if(_objectlist.visible[i]&&ImGui::Button("Click me to hide this object")) _objectlist.visible[i]=false;
-                    int texture_current_idx = _objectlist.TextureIndex[i]; // Here we store our selection data as an index.
-                    ImGui::Text("Click to choose texture for object");
-                    if (ImGui::BeginListBox("TextureList"))
-                    {
-                        for (int n = 0; n < _texturelist.texturename.size(); n++)
-                        {
-                            const bool is_selected = (texture_current_idx == n);
-                            if (ImGui::Selectable(_texturelist.texturename[n].c_str(), is_selected)){
-                                texture_current_idx = n;
-                                _objectlist.TextureIndex[i]=texture_current_idx;
-                            }
-                            if (is_selected)
-                                ImGui::SetItemDefaultFocus();
-                        }
-                        ImGui::EndListBox();
-                    }
-                    ImGui::TreePop();
-                }
-            }
-        }
-
-
-        ImGui::End();
-    }
+    if(help_flags)drawGUIhelp(help_flags);
+    if(file_flags)drawGUIfile(file_flags);
+    if(object_flags)drawGUIobj(object_flags);
     if(NURBS_flags){
         ImGui::Begin("NURBS Window", &NURBS_flags);
         ImGui::Text("In this Window, you can build NURBS surface with mouse click.");
@@ -396,4 +275,144 @@ void Scene::drawGUI()  {
     }
 	ImGui::Render();
 	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+}
+
+void Scene::drawGUIfile(bool &flag){
+    static char loadname[128] = "Type your file/object name here";
+    static char filepath[128] = "Type your file path acurrately!";
+    ImGui::Begin("File Window", &flag);
+    ImGui::Text("In this Window, you can load OBJ files or textures with filepath.");
+    ImGui::Text("You can still export all the scene to OBJ files");
+    ImGui::NewLine();
+    ImGui::Separator();
+    ImGui::InputText("input file path", filepath, IM_ARRAYSIZE(filepath));
+    ImGui::InputText("input file name", loadname, IM_ARRAYSIZE(loadname));
+    if(ImGui::Button("Load OBJ file")){
+        std::string filename =filepath;
+        std::string name=loadname;
+        addModel(filename,loadname);
+        filename="Load Success!";
+        name=" ";
+        strcpy(loadname,name.c_str());
+        strcpy(filepath,filename.c_str());
+    }
+    ImGui::SameLine();
+    if(ImGui::Button("Load Texture file")){
+        std::string filename =filepath;
+        std::string name=loadname;
+        addTexture(filename,loadname);
+        filename="Load Success!";
+        name=" ";
+        strcpy(loadname,name.c_str());
+        strcpy(filepath,filename.c_str());
+    }
+    ImGui::Separator();
+    ImGui::Text("This will merge all the objects to a single group.");
+    ImGui::NewLine();
+    if(ImGui::Button("Export scene to OBJ")){
+        // TODO::Export scene to OBJ
+    }
+    ImGui::Text("This will save scene information without objects");
+    if(ImGui::Button("Export scene to CGF")){
+        SceneSave();
+    }
+    ImGui::End();
+}
+
+void Scene::drawGUIobj(bool &flag){
+    ImGui::Begin("Object Window", &flag);
+    ImGui::Text("In this Window, you can view all the objects in the ");
+    ImGui::Text("scene including light.You are free to set their scales, ");
+    ImGui::Text("rotations and locations.For normal object, you can set ");
+    ImGui::Text("roughness and color.For light, you can set intensity and color.");
+    if(ImGui::CollapsingHeader("Object List")){
+        for (int i =0;i<_objectlist.ModelList.size();i++){
+            if(ImGui::TreeNode((void*)(intptr_t)i,"object %s",_objectlist.objectname[i].c_str())){
+                ImVec4 color = ImVec4(_objectlist.Color[i].x, _objectlist.Color[i].y, _objectlist.Color[i].z,1.0f);
+                const float rota_angle=0.05f;
+                float position[3]={_objectlist.ModelList[i]->position.x,_objectlist.ModelList[i]->position.y,_objectlist.ModelList[i]->position.z};
+                float scale[3] = {_objectlist.ModelList[i]->scale.x,_objectlist.ModelList[i]->scale.y,_objectlist.ModelList[i]->scale.z};
+                static float scaleinput[3]={1.0,1.0,1.0};
+                static float positioninput[3]={1.0,1.0,1.0};
+                bool color_flag=_objectlist.color_flag[i];
+                float roughness=_objectlist.roughness[i];
+                float metallic=_objectlist.metallic[i];
+                ImGui::Checkbox("Use color instead of texture",&color_flag);
+                _objectlist.color_flag[i]=color_flag;
+                ImGui::ColorEdit3("Object Color",(float*)&color);
+                _objectlist.Color[i]=glm::vec3(color.x,color.y,color.z);
+                ImGui::SliderFloat("Roughness",&roughness,0.0f,1.0f,"%.2f");
+                _objectlist.roughness[i]=roughness;
+                ImGui::SliderFloat("Metallic",&metallic,0.0f,1.0f,"%.2f");
+                _objectlist.metallic[i]=metallic;
+                ImGui::DragFloat3("Scale",scale,0.005f,0.0f,10.0f,"%.3f");ImGui::SameLine();
+                if(ImGui::Button("Proportional base scale.x")){
+                    scale[2]=scale[1]=scale[0];  
+                }
+                ImGui::DragFloat3("Position",position,0.005f,-100.0f,100.0f,"%.3f");
+                ImGui::InputFloat3("ScaleType",scaleinput);ImGui::SameLine();
+                if(ImGui::Button("Enter")) {scale[0]=scaleinput[0];scale[1]=scaleinput[1];scale[2]=scaleinput[2];}
+                ImGui::InputFloat3("PositionType",positioninput);ImGui::SameLine();
+                if(ImGui::Button("Enter")) {position[0]=positioninput[0];position[1]=positioninput[1];position[2]=positioninput[2];}
+                _objectlist.ModelList[i]->scale=glm::vec3{scale[0],scale[1],scale[2]};
+                _objectlist.ModelList[i]->position=glm::vec3{position[0],position[1],position[2]};
+                float spacing = ImGui::GetStyle().ItemInnerSpacing.x;
+                ImGui::PushButtonRepeat(true);
+                ImGui::Text("Hode to rotate:   ");ImGui::SameLine();
+                ImGui::Text("rotation-x");ImGui::SameLine();
+                if (ImGui::ArrowButton("##left", ImGuiDir_Left)) {
+                    _objectlist.ModelList[i]->rotation =glm::normalize(glm::quat{ cos(rota_angle / 2),0.0,1.0*sin(rota_angle / 2),0.0 }*_objectlist.ModelList[i]->rotation);
+                }
+                ImGui::SameLine(0.0f, spacing);
+                if (ImGui::ArrowButton("##right", ImGuiDir_Right)) {
+                    _objectlist.ModelList[i]->rotation =glm::normalize(glm::quat{ cos(rota_angle / 2),0.0,-1.0*sin(rota_angle / 2),0.0 }*_objectlist.ModelList[i]->rotation);
+                }
+                ImGui::SameLine();ImGui::Text("rotation-y");ImGui::SameLine();
+                if (ImGui::ArrowButton("##left", ImGuiDir_Left)) {
+                    _objectlist.ModelList[i]->rotation =glm::normalize(glm::quat{ cos(rota_angle / 2),1.0*sin(rota_angle / 2),0.0,0.0 }*_objectlist.ModelList[i]->rotation);
+                }
+                ImGui::SameLine(0.0f, spacing);
+                if (ImGui::ArrowButton("##right", ImGuiDir_Right)) {
+                    _objectlist.ModelList[i]->rotation =glm::normalize(glm::quat{ cos(rota_angle / 2),-1.0*sin(rota_angle / 2),0.0,0.0 }*_objectlist.ModelList[i]->rotation);
+                }
+                ImGui::SameLine();ImGui::Text("rotation-z");ImGui::SameLine();
+                if (ImGui::ArrowButton("##left", ImGuiDir_Left)) {
+                    _objectlist.ModelList[i]->rotation =glm::normalize(glm::quat{ cos(rota_angle / 2),0.0,0.0,1.0*sin(rota_angle / 2) }*_objectlist.ModelList[i]->rotation);
+                }
+                ImGui::SameLine(0.0f, spacing);
+                if (ImGui::ArrowButton("##right", ImGuiDir_Right)) {
+                    _objectlist.ModelList[i]->rotation =glm::normalize(glm::quat{ cos(rota_angle / 2),0.0,0.0,-1.0*sin(rota_angle / 2) }*_objectlist.ModelList[i]->rotation);
+                }
+                ImGui::PopButtonRepeat();
+                if(!_objectlist.visible[i]&&ImGui::Button("Click me to display this object")) _objectlist.visible[i]=true;
+                else if(_objectlist.visible[i]&&ImGui::Button("Click me to hide this object")) _objectlist.visible[i]=false;
+                int texture_current_idx = _objectlist.TextureIndex[i]; // Here we store our selection data as an index.
+                ImGui::Text("Click to choose texture for object");
+                if (ImGui::BeginListBox("TextureList"))
+                {
+                    for (int n = 0; n < _texturelist.texturename.size(); n++)
+                    {
+                        const bool is_selected = (texture_current_idx == n);
+                        if (ImGui::Selectable(_texturelist.texturename[n].c_str(), is_selected)){
+                            texture_current_idx = n;
+                            _objectlist.TextureIndex[i]=texture_current_idx;
+                        }
+                        if (is_selected)
+                            ImGui::SetItemDefaultFocus();
+                    }
+                    ImGui::EndListBox();
+                }
+                ImGui::TreePop();
+            }
+        }
+    }
+    ImGui::End();
+}
+
+void Scene::drawGUIhelp(bool &flag){
+    ImGui::Begin("Helps", &flag);
+    ImGui::Text("This is something could give you a help.");
+    if (ImGui::Button("Close because I know how to use."))
+        flag = false;
+    ImGui::End();
 }
