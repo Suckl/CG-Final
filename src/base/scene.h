@@ -1,3 +1,4 @@
+#pragma once
 #include"model.h"
 #include"texture.h"
 #include"light.h"
@@ -25,14 +26,17 @@ struct ObjectList{
     std::vector<bool> visible;//可见性
     std::vector<std::unique_ptr<Model>> ModelList;//物体模型
     std::vector<bool> color_flag;//应用纹理还是颜色
-    std::vector<int> TextureIndex;//纹理坐标
+    std::vector<int> TextureIndex;//纹理下标
     std::vector<glm::vec3> Color;//颜色坐标
     std::vector<float> roughness;//粗糙度
     std::vector<float> metallic;//金属度
+    std::vector<std::string> filepath;//保存用
 };
+
 struct TextureList{
     std::vector<std::shared_ptr<Texture2D>> texture;
     std::vector<std::string> texturename;
+    std::vector<std::string> filepath;
 };
 
 class Scene:public Application{
@@ -65,6 +69,11 @@ private:
 
     // void export();
     void drawGUI();
+    void drawGUIfile(bool &flag);
+    void drawGUIobj(bool &flag);
+    void drawGUIhelp(bool &flag);
     void handleInput() override;
 	void renderFrame() override;
+    void SceneSave();
+    void SceneLoad();
 };
