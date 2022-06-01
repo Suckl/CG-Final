@@ -55,6 +55,7 @@ void Scene::SceneLoad(){
             _objectlist.roughness.push_back(std::stof(buf));getline(ifs,buf);
             _objectlist.metallic.push_back(std::stof(buf));getline(ifs,buf);
             _objectlist.ModelList.push_back(nullptr);
+            _objectlist.filepath.push_back(buf);
             _objectlist.ModelList[index].reset(new Model(buf));getline(ifs,buf);
             position.x=std::stof(buf);getline(ifs,buf);
             position.y=std::stof(buf);getline(ifs,buf);

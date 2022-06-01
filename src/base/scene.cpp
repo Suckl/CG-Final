@@ -160,7 +160,6 @@ bool Scene::addModel(const std::string filename,const std::string name){
     _objectlist.ModelList.push_back(nullptr);
     _objectlist.objectname.push_back(name);
     _objectlist.ModelList[_objectlist.ModelList.size()-1].reset(new Model(filename));
-	_objectlist.ModelList[_objectlist.ModelList.size()-1]->scale = glm::vec3(3.0f, 3.0f, 3.0f);
     _objectlist.visible.push_back(true);
     _objectlist.Color.push_back(glm::vec3(1.0));
     _objectlist.TextureIndex.push_back(0);
