@@ -78,6 +78,7 @@ private:
     void initLightCubeShader();
 
     void drawList();
+    void debugShadowMap(float near_plane, float far_plane);
     bool addTexture(const std::string filename,const std::string name);
     bool addModel(const std::string filename,const std::string name);
 

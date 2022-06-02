@@ -242,6 +242,41 @@ bool Scene::addTexture(const std::string filename,const std::string name){
 	_texturelist.texture[_texturelist.texture.size()-1].reset(new Texture2D(filename));
 }
 
+void Scene::debugShadowMap(float near_plane, float far_plane) {
+    _lightCubeShader->use();
+    _lightCubeShader->setFloat("near_plane", near_plane);
+    _lightCubeShader->setFloat("far_plane", far_plane);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, depthMap);
+
+    unsigned int quadVAO = 0;
+    unsigned int quadVBO;
+
+    if (quadVAO == 0)
+    {
+        float quadVertices[] = {
+            // positions        // texture Coords
+            -1.0f,  1.0f, 0.0f, 0.0f, 1.0f,
+            -1.0f, -1.0f, 0.0f, 0.0f, 0.0f,
+            1.0f,  1.0f, 0.0f, 1.0f, 1.0f,
+            1.0f, -1.0f, 0.0f, 1.0f, 0.0f,
+        };
+        // setup plane VAO
+        glGenVertexArrays(1, &quadVAO);
+        glGenBuffers(1, &quadVBO);
+        glBindVertexArray(quadVAO);
+        glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), &quadVertices, GL_STATIC_DRAW);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
+    }
+    glBindVertexArray(quadVAO);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glBindVertexArray(0);
+}
+
 void Scene::drawList(){
     switch(_ShadowRenderMode){
         case ShadowRenderMode::None:
@@ -262,7 +297,7 @@ void Scene::drawList(){
             _pbrShader->setFloat("uMetallic", _objectlist.metallic[i]);
             if(_objectlist.color_flag[i]) _pbrShader->setVec3("uColor", _objectlist.Color[i]);
             else _pbrShader->setVec3("uColor", glm::vec3(1.0f));
-            if(!_objectlist.color_flag[i]&&_texturelist.texture[_objectlist.TextureIndex[i]]!=nullptr){
+            if(!_objectlist.color_flag[i] && _texturelist.texture[_objectlist.TextureIndex[i]] != nullptr){
                 glActiveTexture(GL_TEXTURE0);
                 _texturelist.texture[_objectlist.TextureIndex[i]]->bind();
                 _objectlist.ModelList[i]->draw();
@@ -276,28 +311,33 @@ void Scene::drawList(){
             glm::vec3 lightPos = LightList[0]->position;
             glm::mat4 lightProjection, lightView, lightMatrix;
             float near_plane = 1.0f, far_plane = 7.5f;
+            float size = 10.0f;
             
-            lightProjection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, near_plane, far_plane);
+            lightProjection = glm::ortho(-size, size, -size, size, near_plane, far_plane);
             lightView = glm::lookAt(lightPos, lightPos + LightList[0]->getFront(), LightList[0]->getUp());
             lightMatrix = lightProjection * lightView;
 
-            // light pass           
+            // light pass
+            _shadowShader->use();
+            glViewport(0, 0, _shadowWidth, _shadowHeight);
+            glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
+                glClear(GL_DEPTH_BUFFER_BIT);
+            
+            _shadowShader->setMat4("uLightSpaceMatrix", lightMatrix);           
             for(int i = 0; i < _objectlist.ModelList.size(); i++){
                 if(!_objectlist.visible[i]) continue;
-                _shadowShader->use();
-                glViewport(0, 0, _shadowWidth, _shadowHeight);
-                glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
-                    glClear(GL_DEPTH_BUFFER_BIT);
-                
-                _shadowShader->setMat4("uLightSpaceMatrix", lightMatrix);
-                _shadowShader->setMat4("model", _objectlist.ModelList[i]->getModelMatrix());
 
-                glBindFramebuffer(GL_FRAMEBUFFER, 0);
+                _shadowShader->setMat4("model", _objectlist.ModelList[i]->getModelMatrix());
+                _objectlist.ModelList[i]->draw();
             }
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
             
             // reset viewport
             glViewport(0, 0, _windowWidth, _windowHeight);
-            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);     
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+            // debugShadowMap(near_plane, far_plane);
+
             // camera pass
             for(int i = 0; i < _objectlist.ModelList.size(); i++){
                 if(!_objectlist.visible[i]) continue;           
@@ -324,7 +364,7 @@ void Scene::drawList(){
 
                 if(_objectlist.color_flag[i]) _shadowMappingShader->setVec3("uColor", _objectlist.Color[i]);
                 else _shadowMappingShader->setVec3("uColor", glm::vec3(1.0f));
-                if(!_objectlist.color_flag[i]&&_texturelist.texture[_objectlist.TextureIndex[i]] != nullptr){
+                if(!_objectlist.color_flag[i] && _texturelist.texture[_objectlist.TextureIndex[i]] != nullptr){
                     glActiveTexture(GL_TEXTURE0);
                     _texturelist.texture[_objectlist.TextureIndex[i]]->bind();
                     _objectlist.ModelList[i]->draw();
@@ -335,32 +375,69 @@ void Scene::drawList(){
         }
         break;
 
-        case ShadowRenderMode::PCSS:
-        for(int i=0;i<_objectlist.ModelList.size();i++){
-            if(!_objectlist.visible[i]) continue;
-            _pcssShader->use();
-            const glm::mat4 projection = _camera->getProjectionMatrix();
-            const glm::mat4 view = _camera->getViewMatrix();
-            _pcssShader->setMat4("projection", projection);
-            _pcssShader->setMat4("view", view);
-            _pcssShader->setMat4("model", _objectlist.ModelList[i]->getModelMatrix());
-
-            _pcssShader->setVec3("uLightDir", glm::vec3(1.0f,1.0f,1.0f));
-            _pcssShader->setVec3("uCameraPos", _camera->position);
-            _pcssShader->setVec3("uLightRadiance", LightList[0]->radiance);
-
-            _pcssShader->setFloat("uRoughness", _objectlist.roughness[i]);
-            _pcssShader->setFloat("uMetallic", _objectlist.metallic[i]);
+        case ShadowRenderMode::PCSS: {
+            glm::vec3 lightPos = LightList[0]->position;
+            glm::mat4 lightProjection, lightView, lightMatrix;
+            float near_plane = 1.0f, far_plane = 7.5f;
+            float size = 10.0f;
             
-            if(_objectlist.color_flag[i]) _pcssShader->setVec3("uColor", _objectlist.Color[i]);
-            else _pcssShader->setVec3("uColor", glm::vec3(1.0f));
-            if(!_objectlist.color_flag[i]&&_texturelist.texture[_objectlist.TextureIndex[i]]!=nullptr){
-                glActiveTexture(GL_TEXTURE0);
-                _texturelist.texture[_objectlist.TextureIndex[i]]->bind();
+            lightProjection = glm::ortho(-size, size, -size, size, near_plane, far_plane);
+            lightView = glm::lookAt(lightPos, lightPos + LightList[0]->getFront(), LightList[0]->getUp());
+            lightMatrix = lightProjection * lightView;
+
+            // light pass
+            _shadowShader->use();
+            glViewport(0, 0, _shadowWidth, _shadowHeight);
+            glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
+                glClear(GL_DEPTH_BUFFER_BIT);
+            
+            _shadowShader->setMat4("uLightSpaceMatrix", lightMatrix);           
+            for(int i = 0; i < _objectlist.ModelList.size(); i++){
+                if(!_objectlist.visible[i]) continue;
+
+                _shadowShader->setMat4("model", _objectlist.ModelList[i]->getModelMatrix());
                 _objectlist.ModelList[i]->draw();
-                _texturelist.texture[_objectlist.TextureIndex[i]]->unbind();
             }
-            else _objectlist.ModelList[i]->draw();
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            
+            // reset viewport
+            glViewport(0, 0, _windowWidth, _windowHeight);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+            // camera pass
+            for(int i = 0; i < _objectlist.ModelList.size(); i++){
+                if(!_objectlist.visible[i]) continue;           
+                _shadowMappingShader->use();
+
+                _shadowMappingShader->setInt("uShadowMap", 0);
+                glActiveTexture(GL_TEXTURE0);
+                glBindTexture(GL_TEXTURE_2D, depthMap);
+
+                const glm::mat4 projection = _camera->getProjectionMatrix();
+                const glm::mat4 view = _camera->getViewMatrix();
+                
+                _pcssShader->setMat4("projection", projection);
+                _pcssShader->setMat4("view", view);
+                _pcssShader->setMat4("model", _objectlist.ModelList[i]->getModelMatrix());
+                _pcssShader->setMat4("uLightSpaceMatrix", lightMatrix);
+
+                _pcssShader->setVec3("uLightPos", LightList[0]->position);
+                _pcssShader->setVec3("uCameraPos", _camera->position);
+                _pcssShader->setVec3("uLightRadiance", LightList[0]->radiance);
+
+                _pcssShader->setFloat("uRoughness", _objectlist.roughness[i]);
+                _pcssShader->setFloat("uMetallic", _objectlist.metallic[i]);
+
+                if(_objectlist.color_flag[i]) _pcssShader->setVec3("uColor", _objectlist.Color[i]);
+                else _pcssShader->setVec3("uColor", glm::vec3(1.0f));
+                if(!_objectlist.color_flag[i] && _texturelist.texture[_objectlist.TextureIndex[i]] != nullptr){
+                    glActiveTexture(GL_TEXTURE0);
+                    _texturelist.texture[_objectlist.TextureIndex[i]]->bind();
+                    _objectlist.ModelList[i]->draw();
+                    _texturelist.texture[_objectlist.TextureIndex[i]]->unbind();
+                }
+                else _objectlist.ModelList[i]->draw();
+            }
         }
         break;
     }

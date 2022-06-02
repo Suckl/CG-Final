@@ -91,48 +91,32 @@ vec3 PBRcolor()
 }
 
 // Shadow part
-// float unpack(vec4 rgbaDepth) {
-//     const vec4 bitShift = vec4(1.0, 1.0/256.0, 1.0/(256.0*256.0), 1.0/(256.0*256.0*256.0));
-//     return dot(rgbaDepth, bitShift);
-// }
+float unpack(vec4 rgbaDepth) {
+    const vec4 bitShift = vec4(1.0, 1.0/256.0, 1.0/(256.0*256.0), 1.0/(256.0*256.0*256.0));
+    return dot(rgbaDepth, bitShift);
+}
 
-// float useShadowMap(sampler2D shadowMap, vec4 shadowCoord){
-//   // 光视角的最小坐标
-//   vec4 closestDepthVec = texture2D(shadowMap, shadowCoord.xy); 
-//   float closestDepth = unpack(closestDepthVec);
-//   // 当前frag在光视角的坐标
-//   float currentDepth = shadowCoord.z;
-//   // 看是否被遮挡
-//   float shadow = closestDepth > currentDepth ? 1.0 : 0.0;
-//   return shadow;
-// }
+float useShadowMap(sampler2D shadowMap, vec4 shadowCoord){
+    vec3 uLightDir = normalize(uLightPos);
+    float bias = max(0.05 * (1.0 - dot(vNormal, uLightDir)), 0.005);
 
-float ShadowCalculation(vec4 fragPosLightSpace)
-{
-    // perform perspective divide
-    vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
-    // transform to [0,1] range
-    projCoords = projCoords * 0.5 + 0.5;
-    // get closest depth value from light's perspective (using [0,1] range fragPosLight as coords)
-    float closestDepth = texture(uShadowMap, projCoords.xy).r; 
-    // get depth of current fragment from light's perspective
-    float currentDepth = projCoords.z;
-    // check whether current frag pos is in shadow
-    float shadow = currentDepth > closestDepth  ? 1.0 : 0.0;
-
+    // 光视角的最小坐标
+    vec4 closestDepthVec = texture2D(shadowMap, shadowCoord.xy); 
+    float closestDepth = unpack(closestDepthVec);
+    // 当前frag在光视角的坐标
+    float currentDepth = shadowCoord.z;
+    // 看是否被遮挡
+    float shadow = closestDepth + bias > currentDepth ? 1.0 : 0.0;
     return shadow;
 }
 
 void main(void) {
-    // float visibility;
-    // vec3 shadowCoord = vPositionFromLight.xyz / vPositionFromLight.w;
-    // shadowCoord = shadowCoord * 0.5 + 0.5;
+    float visibility;
+    vec3 shadowCoord = vPositionFromLight.xyz / vPositionFromLight.w;
+    shadowCoord = shadowCoord * 0.5 + 0.5;
 
-    // visibility = useShadowMap(uShadowMap, vec4(shadowCoord, 1.0));
+    visibility = useShadowMap(uShadowMap, vec4(shadowCoord, 1.0));
     
-    // vec3 color = PBRcolor() * visibility;
-    float shadow = ShadowCalculation(vPositionFromLight);
-
-    vec3 color = PBRcolor() * (1.0f - shadow);
+    vec3 color = PBRcolor() * visibility;
     gl_FragColor = vec4(color, 1.0);
 }

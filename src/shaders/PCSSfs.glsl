@@ -1,21 +1,18 @@
 #version 330 core
+
+// Pbr related variables
 uniform vec3 uCameraPos;
 uniform vec3 uLightRadiance;
-uniform vec3 uLightDir;
+uniform vec3 uLightPos;
 
 uniform sampler2D uAlbedoMap;
 uniform float uMetallic;
 uniform float uRoughness;
 uniform vec3 uColor;
 
-uniform sampler2D uShadowMap;
-
 in vec2 vTextureCoord;
 in vec3 vFragPos;
 in vec3 vNormal;
-in vec4 vPositionFromLight;
-
-const float PI = 3.14159265359;
 
 // Shadow map related variables
 #define NUM_SAMPLES 20
@@ -26,6 +23,9 @@ const float PI = 3.14159265359;
 #define EPS 1e-3
 #define PI 3.141592653589793
 #define PI2 6.283185307179586
+
+uniform sampler2D uShadowMap;
+in vec4 vPositionFromLight;
 
 // PBR part
 float DistributionGGX(vec3 N, vec3 H, float roughness)
@@ -56,6 +56,8 @@ vec3 fresnelSchlick(vec3 F0, vec3 V, vec3 H)
 
 vec3 PBRcolor()
 {
+     vec3 uLightDir = normalize(uLightPos);
+
     vec3 albedo = pow(texture2D(uAlbedoMap, vTextureCoord).rgb, vec3(2.2));
     if(albedo==vec3(0.0)) albedo=uColor;
     vec3 N = normalize(vNormal);
@@ -95,23 +97,26 @@ float unpack(vec4 rgbaDepth) {
 }
 
 float useShadowMap(sampler2D shadowMap, vec4 shadowCoord){
-  // 光方向的最小深度
-  vec4 closestDepthVec = texture2D(shadowMap, shadowCoord.xy); 
-  float closestDepth = unpack(closestDepthVec);
-  // 该texel在光方向的深度
-  float currentDepth = shadowCoord.z;
-  // 是否是最小深度？
-  float shadow = closestDepth > currentDepth ? 1.0 : 0.0;
-  return shadow;
+    vec3 uLightDir = normalize(uLightPos);
+    float bias = max(0.05 * (1.0 - dot(vNormal, uLightDir)), 0.005);
+
+    // 光视角的最小坐标
+    vec4 closestDepthVec = texture2D(shadowMap, shadowCoord.xy); 
+    float closestDepth = unpack(closestDepthVec);
+    // 当前frag在光视角的坐标
+    float currentDepth = shadowCoord.z;
+    // 看是否被遮挡
+    float shadow = closestDepth + bias > currentDepth ? 1.0 : 0.0;
+    return shadow;
 }
 
 void main(void) {
     float visibility;
     vec3 shadowCoord = vPositionFromLight.xyz / vPositionFromLight.w;
     shadowCoord = shadowCoord * 0.5 + 0.5;
+
     visibility = useShadowMap(uShadowMap, vec4(shadowCoord, 1.0));
-    //visibility = PCF(uShadowMap, vec4(shadowCoord, 1.0));
     
-    vec3 color = PBRcolor();
+    vec3 color = PBRcolor() * visibility;
     gl_FragColor = vec4(color, 1.0);
 }
