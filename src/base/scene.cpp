@@ -1,18 +1,18 @@
 
 #include"scene.h"
-#include"scene_load.h"
+#include"global.h"
 
 const std::string modelPath = "../media/sphere.obj";
 const std::string earthTexturePath = "../media/earthmap.jpg";
 const std::string planetTexturePath = "../media/planet_Quom1200.png";
 
 const std::vector<std::string> skyboxTexturePaths = {
-	"../../media/starfield/Right_Tex.jpg",
-	"../../media/starfield/Left_Tex.jpg",
-	"../../media/starfield/Up_Tex.jpg",
-	"../../media/starfield/Down_Tex.jpg",
-	"../../media/starfield/Front_Tex.jpg",
-	"../../media/starfield/Back_Tex.jpg"
+	"../media/starfield/Right_Tex.jpg",
+	"../media/starfield/Left_Tex.jpg",
+	"../media/starfield/Up_Tex.jpg",
+	"../media/starfield/Down_Tex.jpg",
+	"../media/starfield/Front_Tex.jpg",
+	"../media/starfield/Back_Tex.jpg"
 };
 
 Scene::Scene(const Options& options): Application(options) {
@@ -166,6 +166,18 @@ bool Scene::addModel(const std::string filename,const std::string name){
     _objectlist.color_flag.push_back(false);
     _objectlist.roughness.push_back(0.5f);
     _objectlist.metallic.push_back(0.5f);
+}
+
+void Scene::deleteModel(int index){
+    _objectlist.filepath.erase(_objectlist.filepath.begin()+index);
+    _objectlist.ModelList.erase(_objectlist.ModelList.begin()+index);
+    _objectlist.objectname.erase(_objectlist.objectname.begin()+index);
+    _objectlist.visible.erase(_objectlist.visible.begin()+index);
+    _objectlist.color_flag.erase(_objectlist.color_flag.begin()+index);
+    _objectlist.Color.erase(_objectlist.Color.begin()+index);
+    _objectlist.roughness.erase(_objectlist.roughness.begin()+index);
+    _objectlist.metallic.erase(_objectlist.metallic.begin()+index);
+    _objectlist.TextureIndex.erase(_objectlist.TextureIndex.begin()+index);
 }
 
 bool Scene::addTexture(const std::string filename,const std::string name){
@@ -324,6 +336,30 @@ void Scene::drawGUIobj(bool &flag){
     ImGui::Text("scene including light.You are free to set their scales, ");
     ImGui::Text("rotations and locations.For normal object, you can set ");
     ImGui::Text("roughness and color.For light, you can set intensity and color.");
+    if(ImGui::CollapsingHeader("Add Fundmental Elements")){
+        static float lenth=1.0;
+        static char loadname[128] = "Type your object name here";
+        ImGui::InputText("input file name", loadname, IM_ARRAYSIZE(loadname));
+        ImGui::InputFloat("Cube Side Lenth",&lenth);
+        if(ImGui::Button("Press to Create a Cube")){
+            std::string name =loadname;
+            AddCube(lenth/2,name);
+            name="Creat Success!";
+            strcpy(loadname,name.c_str());
+        }
+        if(ImGui::Button("Sphere")){
+
+        }
+        if(ImGui::Button("Cylinder")){
+
+        }
+        if(ImGui::Button("Cone")){
+
+        }
+        if(ImGui::Button("Prism")){
+
+        }
+    }
     if(ImGui::CollapsingHeader("Object List")){
         for (int i =0;i<_objectlist.ModelList.size();i++){
             if(ImGui::TreeNode((void*)(intptr_t)i,"object %s",_objectlist.objectname[i].c_str())){
@@ -350,9 +386,9 @@ void Scene::drawGUIobj(bool &flag){
                 }
                 ImGui::DragFloat3("Position",position,0.005f,-100.0f,100.0f,"%.3f");
                 ImGui::InputFloat3("ScaleType",scaleinput);ImGui::SameLine();
-                if(ImGui::Button("Enter")) {scale[0]=scaleinput[0];scale[1]=scaleinput[1];scale[2]=scaleinput[2];}
+                if(ImGui::Button("Enter Scale")) {scale[0]=scaleinput[0];scale[1]=scaleinput[1];scale[2]=scaleinput[2];}
                 ImGui::InputFloat3("PositionType",positioninput);ImGui::SameLine();
-                if(ImGui::Button("Enter")) {position[0]=positioninput[0];position[1]=positioninput[1];position[2]=positioninput[2];}
+                if(ImGui::Button("Enter Position")) {position[0]=positioninput[0];position[1]=positioninput[1];position[2]=positioninput[2];}
                 _objectlist.ModelList[i]->scale=glm::vec3{scale[0],scale[1],scale[2]};
                 _objectlist.ModelList[i]->position=glm::vec3{position[0],position[1],position[2]};
                 float spacing = ImGui::GetStyle().ItemInnerSpacing.x;
@@ -401,6 +437,11 @@ void Scene::drawGUIobj(bool &flag){
                     }
                     ImGui::EndListBox();
                 }
+                if(ImGui::Button("Export this orginal model to filename.obj")) 
+                    exportOBJ(_objectlist.ModelList[i]->_vertices,_objectlist.ModelList[i]->_indices,_objectlist.objectname[i]);
+                if(ImGui::Button("Export transformed model to filename.obj")) 
+                    exportTransOBJ(_objectlist.ModelList[i]->_vertices,_objectlist.ModelList[i]->_indices,_objectlist.objectname[i],_objectlist.ModelList[i]->getModelMatrix());
+                if(_objectlist.ModelList.size()>1&&ImGui::Button("Delete this object")) deleteModel(i);
                 ImGui::TreePop();
             }
         }
