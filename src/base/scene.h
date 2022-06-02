@@ -49,9 +49,14 @@ private:
     TextureList _texturelist;
     
     std::vector<std::unique_ptr<Light>> LightList;
-    std::shared_ptr<GLSLProgram> _pbrShader;
     std::unique_ptr<PerspectiveCamera> _camera;
     std::unique_ptr<SkyBox> _skybox;
+
+    std::shared_ptr<GLSLProgram> _pbrShader;
+    std::shared_ptr<GLSLProgram> _shadowShader;
+    std::shared_ptr<GLSLProgram> _shadowMappingShader;
+    std::shared_ptr<GLSLProgram> _pcssShader;
+    std::shared_ptr<GLSLProgram> _lightCubeShader;
 
     enum ShadowRenderMode _ShadowRenderMode=ShadowRenderMode::None;
     enum ScreenShotMode _ScreenShotMode=ScreenShotMode::Normal;
@@ -62,7 +67,16 @@ private:
     const float _cameraMoveSpeed = 10.0f;
     const float cameraRotateSpeed = 0.1f;
 
+    const unsigned int _shadowWidth = 1024, _shadowHeight = 1024;
+    unsigned int depthMapFBO;
+    unsigned int depthMap;
+
     void initPBRShader();
+    void initShadowShader();
+    void initShadowMappingShader();
+    void initPcssShader();
+    void initLightCubeShader();
+
     void drawList();
     bool addTexture(const std::string filename,const std::string name);
     bool addModel(const std::string filename,const std::string name);

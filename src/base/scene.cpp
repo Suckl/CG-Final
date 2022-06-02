@@ -37,19 +37,45 @@ Scene::Scene(const Options& options): Application(options) {
     LightList.push_back(nullptr);
 	LightList[0].reset(new DirectionalLight());
 	LightList[0]->rotation = glm::angleAxis(glm::radians(45.0f), -glm::vec3(1.0f, 1.0f, 1.0f));
-    LightList[0]->position = glm::vec3(3.0f,0.0f,0.0f);
+    // LightList[0]->position = glm::vec3(3.0f,0.0f,0.0f);
+    LightList[0]->position = glm::vec3(1.0f, 1.0f, 1.0f);
 
 	// init skybox
 	_skybox.reset(new SkyBox(skyboxTexturePaths));
 
 	// init shaders
     initPBRShader();
+    initShadowShader();
+    initShadowMappingShader();
+    initPcssShader();
+    initLightCubeShader();
+
 	// init imgui
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
 	ImGui::StyleColorsDark();
 	ImGui_ImplGlfw_InitForOpenGL(_window, true);
 	ImGui_ImplOpenGL3_Init();
+
+    // DEPTH MAP
+    // configure depth map FBO
+    // -----------------------
+    glGenFramebuffers(1, &depthMapFBO);
+    // create depth texture
+    glGenTextures(1, &depthMap);
+    glBindTexture(GL_TEXTURE_2D, depthMap);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, _shadowWidth, _shadowHeight, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+
+    // attach depth texture as FBO's depth buffer
+    glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthMap, 0);
+    glDrawBuffer(GL_NONE);
+    glReadBuffer(GL_NONE);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
 Scene::~Scene() {
@@ -63,6 +89,34 @@ void Scene::initPBRShader(){
 	_pbrShader->attachVertexShaderFromFile("../../src/shaders/PBRvs.glsl");
 	_pbrShader->attachFragmentShaderFromFile("../../src/shaders/PBRfs.glsl");
 	_pbrShader->link();
+}
+
+void Scene::initShadowShader(){
+    _shadowShader.reset(new GLSLProgram);
+    _shadowShader->attachVertexShaderFromFile("../../src/shaders/Shadowvs.glsl");
+    _shadowShader->attachFragmentShaderFromFile("../../src/shaders/Shadowfs.glsl");
+    _shadowShader->link();
+}
+
+void Scene::initShadowMappingShader(){
+    _shadowMappingShader.reset(new GLSLProgram);
+    _shadowMappingShader->attachVertexShaderFromFile("../../src/shaders/ShadowMappingvs.glsl");
+    _shadowMappingShader->attachFragmentShaderFromFile("../../src/shaders/ShadowMappingfs.glsl");
+    _shadowMappingShader->link();
+}
+
+void Scene::initPcssShader(){
+    _pcssShader.reset(new GLSLProgram);
+    _pcssShader->attachVertexShaderFromFile("../../src/shaders/ShadowMappingvs.glsl");
+    _pcssShader->attachFragmentShaderFromFile("../../src/shaders/PCSSfs.glsl");
+    _pcssShader->link();
+}
+
+void Scene::initLightCubeShader(){
+    _lightCubeShader.reset(new GLSLProgram);
+    _lightCubeShader->attachVertexShaderFromFile("../../src/shaders/LightCubevs.glsl");
+    _lightCubeShader->attachFragmentShaderFromFile("../../src/shaders/LightCubefs.glsl");
+    _lightCubeShader->link();
 }
 
 void Scene::handleInput() {
@@ -146,7 +200,8 @@ void Scene::renderFrame() {
 	glEnable(GL_DEPTH_TEST);
 	const glm::mat4 projection = _camera->getProjectionMatrix();
 	const glm::mat4 view = _camera->getViewMatrix();
-	// draw 
+    
+	// draw scene
 	drawList();
     
     // draw skybox
@@ -187,13 +242,15 @@ void Scene::drawList(){
             _pbrShader->setMat4("projection", projection);
             _pbrShader->setMat4("view", view);
             _pbrShader->setMat4("model", _objectlist.ModelList[i]->getModelMatrix());
-            _pbrShader->setVec3("uLightDir",glm::vec3(1.0f,1.0f,1.0f));
-            _pbrShader->setVec3("uCameraPos",_camera->position);
-            _pbrShader->setVec3("uLightRadiance",glm::vec3(2.0f));
-            _pbrShader->setFloat("uRoughness",_objectlist.roughness[i]);
-            _pbrShader->setFloat("uMetallic",_objectlist.metallic[i]);
-            if(_objectlist.color_flag[i]) _pbrShader->setVec3("uColor",_objectlist.Color[i]);
-            else _pbrShader->setVec3("uColor",glm::vec3(1.0f));
+
+            _pbrShader->setVec3("uLightPos", LightList[0]->position);
+            _pbrShader->setVec3("uCameraPos", _camera->position);
+            _pbrShader->setVec3("uLightRadiance", LightList[0]->radiance);
+
+            _pbrShader->setFloat("uRoughness", _objectlist.roughness[i]);
+            _pbrShader->setFloat("uMetallic", _objectlist.metallic[i]);
+            if(_objectlist.color_flag[i]) _pbrShader->setVec3("uColor", _objectlist.Color[i]);
+            else _pbrShader->setVec3("uColor", glm::vec3(1.0f));
             if(!_objectlist.color_flag[i]&&_texturelist.texture[_objectlist.TextureIndex[i]]!=nullptr){
                 glActiveTexture(GL_TEXTURE0);
                 _texturelist.texture[_objectlist.TextureIndex[i]]->bind();
@@ -201,7 +258,98 @@ void Scene::drawList(){
                 _texturelist.texture[_objectlist.TextureIndex[i]]->unbind();
             }
             else _objectlist.ModelList[i]->draw();
+        }
+        break;
+
+        case ShadowRenderMode::ShadowMapping: {
+            glm::vec3 lightPos = LightList[0]->position;
+            glm::mat4 lightProjection, lightView, lightMatrix;
+            float near_plane = 1.0f, far_plane = 7.5f;
             
+            lightProjection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, near_plane, far_plane);
+            lightView = glm::lookAt(lightPos, lightPos + LightList[0]->getFront(), LightList[0]->getUp());
+            lightMatrix = lightProjection * lightView;
+
+            // light pass           
+            for(int i = 0; i < _objectlist.ModelList.size(); i++){
+                if(!_objectlist.visible[i]) continue;
+                _shadowShader->use();
+                glViewport(0, 0, _shadowWidth, _shadowHeight);
+                glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
+                    glClear(GL_DEPTH_BUFFER_BIT);
+                
+                _shadowShader->setMat4("uLightSpaceMatrix", lightMatrix);
+                _shadowShader->setMat4("model", _objectlist.ModelList[i]->getModelMatrix());
+
+                glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            }
+            
+            // reset viewport
+            glViewport(0, 0, _windowWidth, _windowHeight);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);     
+            // camera pass
+            for(int i = 0; i < _objectlist.ModelList.size(); i++){
+                if(!_objectlist.visible[i]) continue;           
+                _shadowMappingShader->use();
+
+                _shadowMappingShader->setInt("uShadowMap", 0);
+                glActiveTexture(GL_TEXTURE0);
+                glBindTexture(GL_TEXTURE_2D, depthMap);
+
+                const glm::mat4 projection = _camera->getProjectionMatrix();
+                const glm::mat4 view = _camera->getViewMatrix();
+                
+                _shadowMappingShader->setMat4("projection", projection);
+                _shadowMappingShader->setMat4("view", view);
+                _shadowMappingShader->setMat4("model", _objectlist.ModelList[i]->getModelMatrix());
+                _shadowMappingShader->setMat4("uLightSpaceMatrix", lightMatrix);
+
+                _shadowMappingShader->setVec3("uLightPos", LightList[0]->position);
+                _shadowMappingShader->setVec3("uCameraPos", _camera->position);
+                _shadowMappingShader->setVec3("uLightRadiance", LightList[0]->radiance);
+
+                _shadowMappingShader->setFloat("uRoughness", _objectlist.roughness[i]);
+                _shadowMappingShader->setFloat("uMetallic", _objectlist.metallic[i]);
+
+                if(_objectlist.color_flag[i]) _shadowMappingShader->setVec3("uColor", _objectlist.Color[i]);
+                else _shadowMappingShader->setVec3("uColor", glm::vec3(1.0f));
+                if(!_objectlist.color_flag[i]&&_texturelist.texture[_objectlist.TextureIndex[i]] != nullptr){
+                    glActiveTexture(GL_TEXTURE0);
+                    _texturelist.texture[_objectlist.TextureIndex[i]]->bind();
+                    _objectlist.ModelList[i]->draw();
+                    _texturelist.texture[_objectlist.TextureIndex[i]]->unbind();
+                }
+                else _objectlist.ModelList[i]->draw();
+            }
+        }
+        break;
+
+        case ShadowRenderMode::PCSS:
+        for(int i=0;i<_objectlist.ModelList.size();i++){
+            if(!_objectlist.visible[i]) continue;
+            _pcssShader->use();
+            const glm::mat4 projection = _camera->getProjectionMatrix();
+            const glm::mat4 view = _camera->getViewMatrix();
+            _pcssShader->setMat4("projection", projection);
+            _pcssShader->setMat4("view", view);
+            _pcssShader->setMat4("model", _objectlist.ModelList[i]->getModelMatrix());
+
+            _pcssShader->setVec3("uLightDir", glm::vec3(1.0f,1.0f,1.0f));
+            _pcssShader->setVec3("uCameraPos", _camera->position);
+            _pcssShader->setVec3("uLightRadiance", LightList[0]->radiance);
+
+            _pcssShader->setFloat("uRoughness", _objectlist.roughness[i]);
+            _pcssShader->setFloat("uMetallic", _objectlist.metallic[i]);
+            
+            if(_objectlist.color_flag[i]) _pcssShader->setVec3("uColor", _objectlist.Color[i]);
+            else _pcssShader->setVec3("uColor", glm::vec3(1.0f));
+            if(!_objectlist.color_flag[i]&&_texturelist.texture[_objectlist.TextureIndex[i]]!=nullptr){
+                glActiveTexture(GL_TEXTURE0);
+                _texturelist.texture[_objectlist.TextureIndex[i]]->bind();
+                _objectlist.ModelList[i]->draw();
+                _texturelist.texture[_objectlist.TextureIndex[i]]->unbind();
+            }
+            else _objectlist.ModelList[i]->draw();
         }
         break;
     }
