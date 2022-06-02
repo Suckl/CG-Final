@@ -180,3 +180,319 @@ void Scene::AddCube(float l,std::string name){
     _objectlist.metallic.push_back(1.0f);
     exportOBJ(vertices,indices,name);
 }
+
+void Scene::AddCone(float r,float h,std::string name){
+    const float PI = 3.14159265359;
+    std::vector<Vertex> vertices;
+    std::vector<uint32_t> indices;
+    glm::vec3 center={0.0,h/2,0.0};
+    glm::vec2 t={0.0,0.0};
+    glm::vec3 n={0.0,1.0,0.0};
+    const int sides=200;
+    float a=2*PI/sides;
+    float phi=atan(h/r);
+    // 0
+    vertices.push_back({-center,-n,t});
+    // 1 ... sides
+    for (int i=0;i<sides;i++){
+        vertices.push_back({glm::vec3{r*cos(a),-h/2,r*sin(a)},-n,t});
+        a+=2*PI/sides;
+    }
+    for (int i = 0; i < sides; i++){
+        indices.push_back(0);
+        indices.push_back(i + 1);
+        if (i + 1 >= sides) indices.push_back(1);
+        else indices.push_back(i + 2);
+    }
+    // sides+1 .. 2*sides
+    for (int i=0;i<sides;i++){
+        glm::vec3 n={sin(phi)*cos(a),cos(phi),sin(phi)*sin(a)};
+        vertices.push_back({glm::vec3{r*cos(a),-h/2,r*sin(a)},n,t});
+        a+=2*PI/sides;
+    }
+    // 2*sides+1 .. 3*sides
+    for (int i=0;i<sides;i++){
+        glm::vec3 n={sin(phi)*cos(a),cos(phi),sin(phi)*sin(a)};
+        vertices.push_back({glm::vec3{0.0,0.0,0.0},n,t});
+        a+=2*PI/sides;
+    }
+    vertices.push_back({center,n,t});
+    for (int i = sides+1; i < 2*sides+1; i++){
+        if (i+sides+1>=3*sides) indices.push_back(2*sides+1);
+        else indices.push_back(i+sides+1);
+        indices.push_back(i);
+        if (i + 1 >= 2*sides+1) indices.push_back(sides+1);
+        else indices.push_back(i + 1);
+    }
+
+    std::string path="../media/"+name+".obj";
+    _objectlist.filepath.push_back(path);
+    _objectlist.ModelList.push_back(nullptr);
+    _objectlist.objectname.push_back(name);
+    _objectlist.ModelList[_objectlist.ModelList.size()-1].reset(new Model(vertices,indices));
+    _objectlist.visible.push_back(true);
+    _objectlist.Color.push_back(glm::vec3(1.0));
+    _objectlist.TextureIndex.push_back(0);
+    _objectlist.color_flag.push_back(true);
+    _objectlist.roughness.push_back(0.5f);
+    _objectlist.metallic.push_back(1.0f);
+    exportOBJ(vertices,indices,name);
+}
+
+void Scene::AddCylinder(float r,float h,std::string name){
+    const float PI = 3.14159265359;
+    std::vector<Vertex> vertices;
+    std::vector<uint32_t> indices;
+    glm::vec3 center={0.0,h/2,0.0};
+    glm::vec2 t={0.0,0.0};
+    glm::vec3 n={0.0,1.0,0.0};
+    vertices.push_back({center,n,t});
+    const int sides=100;
+    float a=2*PI/sides;
+    for (int i=0;i<sides;i++){
+        vertices.push_back({glm::vec3{r*cos(a),h/2,r*sin(a)},n,t});
+        a+=2*PI/sides;
+    }
+    vertices.push_back({-center,-n,t});
+    for (int i=0;i<sides;i++){
+        vertices.push_back({glm::vec3{r*cos(a),-h/2,r*sin(a)},-n,t});
+        a+=2*PI/sides;
+    }
+    for (int i = 0; i < sides; i++){
+        indices.push_back(0);
+        indices.push_back(i + 1);
+        if (i + 1 >= sides) indices.push_back(1);
+        else indices.push_back(i + 2);
+    }
+    for (int i = sides + 1; i < 2 * sides + 1; i++){
+        indices.push_back(sides + 1);
+        if (i + 2 >= 2 * sides + 2) indices.push_back(sides + 2);
+        else indices.push_back(i + 2);
+        indices.push_back(i + 1);
+    }
+    // 2*side + 2 ... 3*side + 1
+    for (int i=0;i<sides;i++){
+        vertices.push_back({glm::vec3{r*cos(a),h/2,r*sin(a)},glm::vec3{cos(a),0.0,sin(a)},t});
+        a+=2*PI/sides;
+    }
+    // 3*side + 2 ... 4*side +1
+    for (int i=0;i<sides;i++){
+        vertices.push_back({glm::vec3{r*cos(a),-h/2,r*sin(a)},glm::vec3{cos(a),0.0,sin(a)},t});
+        a+=2*PI/sides;
+    }
+    for (int i=2*sides+2;i<3*sides+2;i++){
+        indices.push_back(i);
+        if(i+1>=3*sides+2) indices.push_back(2*sides+2);
+        else indices.push_back(i+1);
+        indices.push_back(i+sides);
+        if(i+1>=3*sides+2) indices.push_back(2*sides+2);
+        else indices.push_back(i+1);
+        indices.push_back(i+sides);
+        if(i+sides+1>=4*sides+2) indices.push_back(3*sides+2);
+        else indices.push_back(i+sides+1);
+    }
+
+    std::string path="../media/"+name+".obj";
+    _objectlist.filepath.push_back(path);
+    _objectlist.ModelList.push_back(nullptr);
+    _objectlist.objectname.push_back(name);
+    _objectlist.ModelList[_objectlist.ModelList.size()-1].reset(new Model(vertices,indices));
+    _objectlist.visible.push_back(true);
+    _objectlist.Color.push_back(glm::vec3(1.0));
+    _objectlist.TextureIndex.push_back(0);
+    _objectlist.color_flag.push_back(true);
+    _objectlist.roughness.push_back(0.5f);
+    _objectlist.metallic.push_back(1.0f);
+    exportOBJ(vertices,indices,name);
+}
+
+void Scene::AddFrustum(float r1,float r2,float h,std::string name,int sides){
+    const float PI = 3.14159265359;
+    std::vector<Vertex> vertices;
+    std::vector<uint32_t> indices;
+    glm::vec3 center={0.0,h/2,0.0};
+    glm::vec2 t={0.0,0.0};
+    glm::vec3 n={0.0,1.0,0.0};
+    vertices.push_back({center,n,t});
+    float a=2*PI/sides;
+    for (int i=0;i<sides;i++){
+        vertices.push_back({glm::vec3{r1*cos(a),h/2,r1*sin(a)},n,t});
+        a+=2*PI/sides;
+    }
+    vertices.push_back({-center,-n,t});
+    for (int i=0;i<sides;i++){
+        vertices.push_back({glm::vec3{r2*cos(a),-h/2,r2*sin(a)},-n,t});
+        a+=2*PI/sides;
+    }
+    for (int i = 0; i < sides; i++){
+        indices.push_back(0);
+        indices.push_back(i + 1);
+        if (i + 1 >= sides) indices.push_back(1);
+        else indices.push_back(i + 2);
+    }
+    for (int i = sides + 1; i < 2 * sides + 1; i++){
+        indices.push_back(sides + 1);
+        if (i + 2 >= 2 * sides + 2) indices.push_back(sides + 2);
+        else indices.push_back(i + 2);
+        indices.push_back(i + 1);
+    }
+    // 2*side + 2 ... 4*side + 1
+    for (int i=0;i<sides;i++){
+        vertices.push_back({glm::vec3{r1*cos(a),h/2,r1*sin(a)},glm::vec3{cos(a+PI/sides),0.0,sin(a+PI/sides)},t});
+        vertices.push_back({glm::vec3{r1*cos(a+2*PI/sides),h/2,r1*sin(a+2*PI/sides)},glm::vec3{cos(a+PI/sides),0.0,sin(a+PI/sides)},t});
+        a+=2*PI/sides;
+    }
+    // 5*side + 2 ... 6*side +1
+    for (int i=0;i<sides;i++){
+        vertices.push_back({glm::vec3{r2*cos(a),-h/2,r2*sin(a)},glm::vec3{cos(a+PI/sides),0.0,sin(a+PI/sides)},t});
+        vertices.push_back({glm::vec3{r2*cos(a+2*PI/sides),-h/2,r2*sin(a+2*PI/sides)},glm::vec3{cos(a+PI/sides),0.0,sin(a+PI/sides)},t});
+        a+=2*PI/sides;
+    }
+    for (int i=2*sides+2;i<4*sides+2;i=i+2){
+        indices.push_back(i);
+        if(i+1>=4*sides+2) indices.push_back(2*sides+2);
+        else indices.push_back(i+1);
+        indices.push_back(i+2*sides);
+        if(i+1>=4*sides+2) indices.push_back(2*sides+2);
+        else indices.push_back(i+1);
+        indices.push_back(i+2*sides);
+        if(i+2*sides+1>=6*sides+2) indices.push_back(4*sides+2);
+        else indices.push_back(i+2*sides+1);
+    }
+
+    std::string path="../media/"+name+".obj";
+    _objectlist.filepath.push_back(path);
+    _objectlist.ModelList.push_back(nullptr);
+    _objectlist.objectname.push_back(name);
+    _objectlist.ModelList[_objectlist.ModelList.size()-1].reset(new Model(vertices,indices));
+    _objectlist.visible.push_back(true);
+    _objectlist.Color.push_back(glm::vec3(1.0));
+    _objectlist.TextureIndex.push_back(0);
+    _objectlist.color_flag.push_back(true);
+    _objectlist.roughness.push_back(0.5f);
+    _objectlist.metallic.push_back(1.0f);
+    exportOBJ(vertices,indices,name);
+}
+
+void Scene::AddPrism(float r,float h,std::string name,int sides){
+    const float PI = 3.14159265359;
+    std::vector<Vertex> vertices;
+    std::vector<uint32_t> indices;
+    glm::vec3 center={0.0,h/2,0.0};
+    glm::vec2 t={0.0,0.0};
+    glm::vec3 n={0.0,1.0,0.0};
+    vertices.push_back({center,n,t});
+    float a=2*PI/sides;
+    for (int i=0;i<sides;i++){
+        vertices.push_back({glm::vec3{r*cos(a),h/2,r*sin(a)},n,t});
+        a+=2*PI/sides;
+    }
+    vertices.push_back({-center,-n,t});
+    for (int i=0;i<sides;i++){
+        vertices.push_back({glm::vec3{r*cos(a),-h/2,r*sin(a)},-n,t});
+        a+=2*PI/sides;
+    }
+    for (int i = 0; i < sides; i++){
+        indices.push_back(0);
+        indices.push_back(i + 1);
+        if (i + 1 >= sides) indices.push_back(1);
+        else indices.push_back(i + 2);
+    }
+    for (int i = sides + 1; i < 2 * sides + 1; i++){
+        indices.push_back(sides + 1);
+        if (i + 2 >= 2 * sides + 2) indices.push_back(sides + 2);
+        else indices.push_back(i + 2);
+        indices.push_back(i + 1);
+    }
+    // 2*side + 2 ... 4*side + 1
+    for (int i=0;i<sides;i++){
+        vertices.push_back({glm::vec3{r*cos(a),h/2,r*sin(a)},glm::vec3{cos(a+PI/sides),0.0,sin(a+PI/sides)},t});
+        vertices.push_back({glm::vec3{r*cos(a+2*PI/sides),h/2,r*sin(a+2*PI/sides)},glm::vec3{cos(a+PI/sides),0.0,sin(a+PI/sides)},t});
+        a+=2*PI/sides;
+    }
+    // 5*side + 2 ... 6*side +1
+    for (int i=0;i<sides;i++){
+        vertices.push_back({glm::vec3{r*cos(a),-h/2,r*sin(a)},glm::vec3{cos(a+PI/sides),0.0,sin(a+PI/sides)},t});
+        vertices.push_back({glm::vec3{r*cos(a+2*PI/sides),-h/2,r*sin(a+2*PI/sides)},glm::vec3{cos(a+PI/sides),0.0,sin(a+PI/sides)},t});
+        a+=2*PI/sides;
+    }
+    for (int i=2*sides+2;i<4*sides+2;i=i+2){
+        indices.push_back(i);
+        if(i+1>=4*sides+2) indices.push_back(2*sides+2);
+        else indices.push_back(i+1);
+        indices.push_back(i+2*sides);
+        if(i+1>=4*sides+2) indices.push_back(2*sides+2);
+        else indices.push_back(i+1);
+        indices.push_back(i+2*sides);
+        if(i+2*sides+1>=6*sides+2) indices.push_back(4*sides+2);
+        else indices.push_back(i+2*sides+1);
+    }
+
+    std::string path="../media/"+name+".obj";
+    _objectlist.filepath.push_back(path);
+    _objectlist.ModelList.push_back(nullptr);
+    _objectlist.objectname.push_back(name);
+    _objectlist.ModelList[_objectlist.ModelList.size()-1].reset(new Model(vertices,indices));
+    _objectlist.visible.push_back(true);
+    _objectlist.Color.push_back(glm::vec3(1.0));
+    _objectlist.TextureIndex.push_back(0);
+    _objectlist.color_flag.push_back(true);
+    _objectlist.roughness.push_back(0.5f);
+    _objectlist.metallic.push_back(1.0f);
+    exportOBJ(vertices,indices,name);
+}
+
+void Scene::AddSphere(float r,std::string name){
+    const float PI = 3.14159265359;
+    std::vector<Vertex> vertices;
+    std::vector<uint32_t> indices;
+    const int num=50;
+    const float dtheta=PI/num;
+    const float dphi=2*PI/num;
+    float theta=dtheta;
+    float phi=dphi;
+    glm::vec2 t{0.0,0.0};
+    vertices.push_back({glm::vec3{0.0,r,0.0},glm::vec3{0.0,1.0,0.0},t});
+    for(int i=0;i<num;i++){
+        for(int j=0;j<num;j++){
+            glm::vec3 p={sin(theta)*cos(phi),cos(theta),sin(theta)*sin(phi)};
+            glm::vec3 n=normalize(p);
+            // t={atan(p.y/p.x)/(2*PI),asin(p.z/r)/PI+0.5};
+            vertices.push_back({p,n,t});
+            phi+=dphi;
+        }
+        // first
+        if(i==0){
+            for(int j=0;j<num;j++){
+                indices.push_back(0);
+                indices.push_back(j+1);
+                indices.push_back((j+2)%num);
+            }
+        }
+        // (i-1)*num+1 .. i*num
+        // i*num+1 .. (i+1)*num 
+        else{
+            for (int j=0;j<num;j++){
+                indices.push_back((i-1)*num+j+1);
+                indices.push_back((i-1)*num+(j+2)%num);
+                indices.push_back(i*num+j+1);
+                indices.push_back(i*num+j+1);
+                indices.push_back((i-1)*num+(j+2)%num);
+                indices.push_back(i*num+(j+2)%num);
+            }
+        }
+        theta+=dtheta;
+    }
+    std::string path="../media/"+name+".obj";
+    _objectlist.filepath.push_back(path);
+    _objectlist.ModelList.push_back(nullptr);
+    _objectlist.objectname.push_back(name);
+    _objectlist.ModelList[_objectlist.ModelList.size()-1].reset(new Model(vertices,indices));
+    _objectlist.visible.push_back(true);
+    _objectlist.Color.push_back(glm::vec3(1.0));
+    _objectlist.TextureIndex.push_back(0);
+    _objectlist.color_flag.push_back(true);
+    _objectlist.roughness.push_back(0.5f);
+    _objectlist.metallic.push_back(1.0f);
+    exportOBJ(vertices,indices,name);
+}

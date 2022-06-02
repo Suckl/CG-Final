@@ -80,4 +80,9 @@ private:
     void exportOBJ(const std::vector<Vertex> _vertices,const std::vector<uint32_t> _indices,std::string filename);
     void exportTransOBJ(const std::vector<Vertex> _vertices,const std::vector<uint32_t> _indices,std::string filename,glm::mat4 model);
     void AddCube(float l,std::string name);
+    void AddSphere(float r,std::string name);
+    void AddCylinder(float r,float h,std::string name);
+    void AddPrism(float r,float h,std::string name,int sides);
+    void AddFrustum(float r1,float r2,float h,std::string name,int sides);
+    void AddCone(float r,float h,std::string name);
 };

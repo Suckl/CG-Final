@@ -337,28 +337,72 @@ void Scene::drawGUIobj(bool &flag){
     ImGui::Text("rotations and locations.For normal object, you can set ");
     ImGui::Text("roughness and color.For light, you can set intensity and color.");
     if(ImGui::CollapsingHeader("Add Fundmental Elements")){
+        static float Cradius=1.0;
+        static float Cheight=3.0;
         static float lenth=1.0;
+        static float Sradius=1.0;
         static char loadname[128] = "Type your object name here";
+        static int Psides=3;
+        static float Pheight=3.0;
+        static float Pradius=1.0;
+        static int Fsides=3;
+        static float Fheight=3.0;
+        static float Fradius1=1.0;
+        static float Fradius2=2.0;
+        static float Coradius=1.0;
+        static float Coheight=1.5;
         ImGui::InputText("input file name", loadname, IM_ARRAYSIZE(loadname));
-        ImGui::InputFloat("Cube Side Lenth",&lenth);
+        ImGui::NewLine();
+        ImGui::SliderFloat("Cube Side Lenth",&lenth,0.1,10.0,"%.3f");
         if(ImGui::Button("Press to Create a Cube")){
             std::string name =loadname;
             AddCube(lenth/2,name);
             name="Creat Success!";
             strcpy(loadname,name.c_str());
         }
-        if(ImGui::Button("Sphere")){
-
+        ImGui::SliderFloat("Sphere radius",&Sradius,0.1,10.0,"%.3f");
+        if(ImGui::Button("Press to Create a Sphere")){
+            std::string name =loadname;
+            AddSphere(Sradius,name);
+            name="Creat Success!";
+            strcpy(loadname,name.c_str());
         }
-        if(ImGui::Button("Cylinder")){
-
+        ImGui::SliderFloat("Cylinder radius",&Cradius,0.1,10.0,"%.3f");
+        ImGui::SliderFloat("Cylinder height",&Cheight,0.1,10.0,"%.3f");
+        if(ImGui::Button("Press to Create a Cylinder")){
+            std::string name =loadname;
+            AddCylinder(Cradius,Cheight,name);
+            name="Creat Success!";
+            strcpy(loadname,name.c_str());
         }
-        if(ImGui::Button("Cone")){
-
+        ImGui::SliderFloat("Cone radius",&Coradius,0.1,10.0,"%.3f");
+        ImGui::SliderFloat("Cone height",&Coheight,0.1,10.0,"%.3f");
+        if(ImGui::Button("Press to Create a Cone")){
+            std::string name =loadname;
+            AddCone(Coradius,Coheight*2,name);
+            name="Creat Success!";
+            strcpy(loadname,name.c_str());
         }
-        if(ImGui::Button("Prism")){
-
+        ImGui::SliderInt("Prism  edges",&Psides,3,20);
+        ImGui::SliderFloat("Prism radius",&Pradius,0.1,10.0,"%.3f");
+        ImGui::SliderFloat("Prism height",&Pheight,0.1,10.0,"%.3f");
+        if(ImGui::Button("Press to Create a Prism")){
+            std::string name =loadname;
+            AddPrism(Pradius,Pheight,name,Psides);
+            name="Creat Success!";
+            strcpy(loadname,name.c_str());
         }
+        ImGui::SliderInt("Frustum  edges",&Fsides,3,20);
+        ImGui::SliderFloat("Frustum radius1",&Fradius1,0.1,10.0,"%.3f");
+        ImGui::SliderFloat("Frustum radius2",&Fradius2,0.1,10.0,"%.3f");
+        ImGui::SliderFloat("Frustum height",&Fheight,0.1,10.0,"%.3f");
+        if(ImGui::Button("Press to Create a Frustum")){
+            std::string name =loadname;
+            AddFrustum(Fradius1,Fradius2,Fheight,name,Fsides);
+            name="Creat Success!";
+            strcpy(loadname,name.c_str());
+        }
+
     }
     if(ImGui::CollapsingHeader("Object List")){
         for (int i =0;i<_objectlist.ModelList.size();i++){
