@@ -33,11 +33,11 @@ public:
 
     virtual void drawBoundingBox() const;
 
-protected:
+
     // vertices of the table represented in model's own coordinate
     std::vector<Vertex> _vertices;
     std::vector<uint32_t> _indices;
-
+protected:
     // bounding box
     BoundingBox _boundingBox;
 

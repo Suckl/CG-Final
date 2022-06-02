@@ -76,4 +76,8 @@ private:
 	void renderFrame() override;
     void SceneSave();
     void SceneLoad();
+    void deleteModel(int index);
+    void exportOBJ(const std::vector<Vertex> _vertices,const std::vector<uint32_t> _indices,std::string filename);
+    void exportTransOBJ(const std::vector<Vertex> _vertices,const std::vector<uint32_t> _indices,std::string filename,glm::mat4 model);
+    void AddCube(float l,std::string name);
 };
