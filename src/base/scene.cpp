@@ -140,27 +140,31 @@ void Scene::handleInput() {
 	}
 
 	if (_keyboardInput.keyStates[GLFW_KEY_W] != GLFW_RELEASE&&mouse_capture_flag) {
-		if(_CameraMode==CameraMode::Free)_camera->position += _camera->getFront() * _cameraMoveSpeed * (float)_deltaTime*2;
+		if(_CameraMode==CameraMode::Free)_camera->position += _camera->getFront() * _cameraMoveSpeed * (float)_deltaTime*1.5;
         else _camera->position += 
             glm::normalize(glm::vec3(_camera->getFront().x,0.0f,_camera->getFront().z)) * _cameraMoveSpeed * (float)_deltaTime;
 	}
 
 	if (_keyboardInput.keyStates[GLFW_KEY_A] != GLFW_RELEASE&&mouse_capture_flag) {
-		if(_CameraMode==CameraMode::Free)_camera->position -= _camera->getRight() * _cameraMoveSpeed * (float)_deltaTime*2;
+		if(_CameraMode==CameraMode::Free)_camera->position -= _camera->getRight() * _cameraMoveSpeed * (float)_deltaTime*1.5;
         else _camera->position -= 
             glm::normalize(glm::vec3(_camera->getRight().x,0.0f,_camera->getRight().z)) * _cameraMoveSpeed * (float)_deltaTime;
 	}
 
 	if (_keyboardInput.keyStates[GLFW_KEY_S] != GLFW_RELEASE&&mouse_capture_flag) {
-		if(_CameraMode==CameraMode::Free)_camera->position -= _camera->getFront() * _cameraMoveSpeed * (float)_deltaTime*2;
+		if(_CameraMode==CameraMode::Free)_camera->position -= _camera->getFront() * _cameraMoveSpeed * (float)_deltaTime*1.5;
         else _camera->position -= 
             glm::normalize(glm::vec3(_camera->getFront().x,0.0f,_camera->getFront().z)) * _cameraMoveSpeed * (float)_deltaTime;
 	}
 
 	if (_keyboardInput.keyStates[GLFW_KEY_D] != GLFW_RELEASE&&mouse_capture_flag) {
-		if(_CameraMode==CameraMode::Free)_camera->position += _camera->getRight() * _cameraMoveSpeed * (float)_deltaTime*2;
+		if(_CameraMode==CameraMode::Free)_camera->position += _camera->getRight() * _cameraMoveSpeed * (float)_deltaTime*1.5;
         else _camera->position += 
             glm::normalize(glm::vec3(_camera->getRight().x,0.0f,_camera->getRight().z)) * _cameraMoveSpeed * (float)_deltaTime;
+	}
+
+    if (_keyboardInput.keyStates[GLFW_KEY_SPACE] != GLFW_RELEASE&&mouse_capture_flag) {
+		if(_CameraMode==CameraMode::Free)_camera->position += glm::vec3(0.0,1.0,0.0) * _cameraMoveSpeed * (float)_deltaTime*1.5;
 	}
 
     if (_keyboardInput.keyStates[GLFW_KEY_LEFT_ALT] != GLFW_RELEASE&&test==false) {
@@ -350,6 +354,9 @@ void Scene::drawList(){
             _shadowShader->setMat4("uLightSpaceMatrix", lightMatrix);           
             for(int i = 0; i < _objectlist.ModelList.size(); i++){
                 if(!_objectlist.visible[i]) continue;
+                if(series_flag&&i<_serise.sequence.size()&&_serise.max>-1&&_serise.sequence[i]!=-1){
+                    if (_serise.sequence[i]!=count/20) continue;
+                }
 
                 _shadowShader->setMat4("model", _objectlist.ModelList[i]->getModelMatrix());
                 _objectlist.ModelList[i]->draw();
@@ -366,11 +373,15 @@ void Scene::drawList(){
             for(int i = 0; i < _objectlist.ModelList.size(); i++){
                 if(!_objectlist.visible[i]) continue;           
                 _shadowMappingShader->use();
+                if(!_objectlist.visible[i]) continue;
+                if(series_flag&&i<_serise.sequence.size()&&_serise.max>-1&&_serise.sequence[i]!=-1){
+                    if (_serise.sequence[i]!=count/20) continue;
+                }
 
                 _shadowMappingShader->setInt("uShadowMap", 0);
+                _shadowMappingShader->setInt("uAlbedoMap", 1);
                 glActiveTexture(GL_TEXTURE0);
                 glBindTexture(GL_TEXTURE_2D, depthMap);
-                glUniform1i(glGetUniformLocation(_shadowMappingShader->_handle, "uShadowMap"), 0);
 
                 const glm::mat4 projection = _camera->getProjectionMatrix();
                 const glm::mat4 view = _camera->getViewMatrix();
@@ -392,12 +403,13 @@ void Scene::drawList(){
                 if(!_objectlist.color_flag[i] && _texturelist.texture[_objectlist.TextureIndex[i]] != nullptr){
                     glActiveTexture(GL_TEXTURE1);
                     _texturelist.texture[_objectlist.TextureIndex[i]]->bind();
-                    glUniform1i(glGetUniformLocation(_shadowMappingShader->_handle, "uAlbedoMap"), 1);
                     _objectlist.ModelList[i]->draw();
                     _texturelist.texture[_objectlist.TextureIndex[i]]->unbind();
                 }
                 else _objectlist.ModelList[i]->draw();
             }
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D,0);
         }
         break;
 
@@ -419,6 +431,9 @@ void Scene::drawList(){
             _shadowShader->setMat4("uLightSpaceMatrix", lightMatrix);           
             for(int i = 0; i < _objectlist.ModelList.size(); i++){
                 if(!_objectlist.visible[i]) continue;
+                if(series_flag&&i<_serise.sequence.size()&&_serise.max>-1&&_serise.sequence[i]!=-1){
+                    if (_serise.sequence[i]!=count/20) continue;
+                }                
 
                 _shadowShader->setMat4("model", _objectlist.ModelList[i]->getModelMatrix());
                 _objectlist.ModelList[i]->draw();
@@ -432,12 +447,15 @@ void Scene::drawList(){
             // camera pass
             for(int i = 0; i < _objectlist.ModelList.size(); i++){
                 if(!_objectlist.visible[i]) continue;           
+                if(series_flag&&i<_serise.sequence.size()&&_serise.max>-1&&_serise.sequence[i]!=-1){
+                    if (_serise.sequence[i]!=count/20) continue;
+                }
                 _pcfShader->use();
 
                 _pcfShader->setInt("uShadowMap", 0);
+                _pcfShader->setInt("uAlbedoMap", 1);
                 glActiveTexture(GL_TEXTURE0);
                 glBindTexture(GL_TEXTURE_2D, depthMap);
-                glUniform1i(glGetUniformLocation(_pcfShader->_handle, "uShadowMap"), 0);
 
                 const glm::mat4 projection = _camera->getProjectionMatrix();
                 const glm::mat4 view = _camera->getViewMatrix();
@@ -459,12 +477,13 @@ void Scene::drawList(){
                 if(!_objectlist.color_flag[i] && _texturelist.texture[_objectlist.TextureIndex[i]] != nullptr){
                     glActiveTexture(GL_TEXTURE1);
                     _texturelist.texture[_objectlist.TextureIndex[i]]->bind();
-                    glUniform1i(glGetUniformLocation(_pcfShader->_handle, "uAlbedoMap"), 1);
                     _objectlist.ModelList[i]->draw();
                     _texturelist.texture[_objectlist.TextureIndex[i]]->unbind();
                 }
                 else _objectlist.ModelList[i]->draw();
             }
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D,0);
         }
         break;
 
@@ -481,12 +500,14 @@ void Scene::drawList(){
             _shadowShader->use();
             glViewport(0, 0, _shadowWidth, _shadowHeight);
             glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
-                glClear(GL_DEPTH_BUFFER_BIT);
+            glClear(GL_DEPTH_BUFFER_BIT);
             
             _shadowShader->setMat4("uLightSpaceMatrix", lightMatrix);           
             for(int i = 0; i < _objectlist.ModelList.size(); i++){
                 if(!_objectlist.visible[i]) continue;
-
+                if(series_flag&&i<_serise.sequence.size()&&_serise.max>-1&&_serise.sequence[i]!=-1){
+                    if (_serise.sequence[i]!=count/20) continue;
+                }
                 _shadowShader->setMat4("model", _objectlist.ModelList[i]->getModelMatrix());
                 _objectlist.ModelList[i]->draw();
             }
@@ -500,11 +521,13 @@ void Scene::drawList(){
             for(int i = 0; i < _objectlist.ModelList.size(); i++){
                 if(!_objectlist.visible[i]) continue;           
                 _pcssShader->use();
-
+                if(series_flag&&i<_serise.sequence.size()&&_serise.max>-1&&_serise.sequence[i]!=-1){
+                    if (_serise.sequence[i]!=count/20) continue;
+                }
                 _pcssShader->setInt("uShadowMap", 0);
+                _pcssShader->setInt("uAlbedoMap", 1);
                 glActiveTexture(GL_TEXTURE0);
                 glBindTexture(GL_TEXTURE_2D, depthMap);
-                glUniform1i(glGetUniformLocation(_pcssShader->_handle, "uShadowMap"), 0);
 
                 const glm::mat4 projection = _camera->getProjectionMatrix();
                 const glm::mat4 view = _camera->getViewMatrix();
@@ -526,11 +549,12 @@ void Scene::drawList(){
                 if(!_objectlist.color_flag[i] && _texturelist.texture[_objectlist.TextureIndex[i]] != nullptr){
                     glActiveTexture(GL_TEXTURE1);
                     _texturelist.texture[_objectlist.TextureIndex[i]]->bind();
-                    glUniform1i(glGetUniformLocation(_pcssShader->_handle, "uAlbedoMap"), 1);
                     _objectlist.ModelList[i]->draw();
                     _texturelist.texture[_objectlist.TextureIndex[i]]->unbind();
                 }
                 else _objectlist.ModelList[i]->draw();
+                glActiveTexture(GL_TEXTURE0);
+                glBindTexture(GL_TEXTURE_2D,0);
             }
         }
         break;

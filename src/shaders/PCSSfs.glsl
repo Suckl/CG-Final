@@ -4,7 +4,7 @@
 uniform vec3 uCameraPos;
 uniform vec3 uLightRadiance;
 uniform vec3 uLightPos;
-
+uniform sampler2D uShadowMap;
 uniform sampler2D uAlbedoMap;
 uniform float uMetallic;
 uniform float uRoughness;
@@ -24,7 +24,7 @@ in vec3 vNormal;
 #define PI 3.141592653589793
 #define PI2 6.283185307179586
 
-uniform sampler2D uShadowMap;
+
 in vec4 vPositionFromLight;
 
 highp float rand_1to1(highp float x ) { 
