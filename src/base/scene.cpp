@@ -38,7 +38,9 @@ Scene::Scene(const Options& options): Application(options) {
 	LightList[0].reset(new DirectionalLight());
 	LightList[0]->rotation = glm::angleAxis(glm::radians(45.0f), -glm::vec3(1.0f, 1.0f, 1.0f));
     // LightList[0]->position = glm::vec3(3.0f,0.0f,0.0f);
-    LightList[0]->position = glm::vec3(1.0f, 1.0f, 1.0f);
+    LightList[0]->position = glm::vec3(0.5f, 2.0f, 1.0f);
+    LightList[0]->near_plane = 2.0f;
+    LightList[0]->far_plane = 13.0f;
 
 	// init skybox
 	_skybox.reset(new SkyBox(skyboxTexturePaths));
@@ -47,6 +49,7 @@ Scene::Scene(const Options& options): Application(options) {
     initPBRShader();
     initShadowShader();
     initShadowMappingShader();
+    initPcfShader();
     initPcssShader();
     initLightCubeShader();
 
@@ -103,6 +106,13 @@ void Scene::initShadowMappingShader(){
     _shadowMappingShader->attachVertexShaderFromFile("../../src/shaders/ShadowMappingvs.glsl");
     _shadowMappingShader->attachFragmentShaderFromFile("../../src/shaders/ShadowMappingfs.glsl");
     _shadowMappingShader->link();
+}
+
+void Scene::initPcfShader(){
+    _pcfShader.reset(new GLSLProgram);
+    _pcfShader->attachVertexShaderFromFile("../../src/shaders/ShadowMappingvs.glsl");
+    _pcfShader->attachFragmentShaderFromFile("../../src/shaders/PCFfs.glsl");
+    _pcfShader->link();
 }
 
 void Scene::initPcssShader(){
@@ -310,10 +320,9 @@ void Scene::drawList(){
         case ShadowRenderMode::ShadowMapping: {
             glm::vec3 lightPos = LightList[0]->position;
             glm::mat4 lightProjection, lightView, lightMatrix;
-            float near_plane = 1.0f, far_plane = 7.5f;
-            float size = 10.0f;
+            float size = 20.0f;
             
-            lightProjection = glm::ortho(-size, size, -size, size, near_plane, far_plane);
+            lightProjection = glm::ortho(-size, size, -size, size, LightList[0]->near_plane, LightList[0]->far_plane);
             lightView = glm::lookAt(lightPos, lightPos + LightList[0]->getFront(), LightList[0]->getUp());
             lightMatrix = lightProjection * lightView;
 
@@ -336,7 +345,7 @@ void Scene::drawList(){
             glViewport(0, 0, _windowWidth, _windowHeight);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-            // debugShadowMap(near_plane, far_plane);
+            // debugShadowMap(LightList[0]->near_plane, LightList[0]->far_plane);
 
             // camera pass
             for(int i = 0; i < _objectlist.ModelList.size(); i++){
@@ -346,6 +355,7 @@ void Scene::drawList(){
                 _shadowMappingShader->setInt("uShadowMap", 0);
                 glActiveTexture(GL_TEXTURE0);
                 glBindTexture(GL_TEXTURE_2D, depthMap);
+                glUniform1i(glGetUniformLocation(_shadowMappingShader->_handle, "uShadowMap"), 0);
 
                 const glm::mat4 projection = _camera->getProjectionMatrix();
                 const glm::mat4 view = _camera->getViewMatrix();
@@ -365,8 +375,9 @@ void Scene::drawList(){
                 if(_objectlist.color_flag[i]) _shadowMappingShader->setVec3("uColor", _objectlist.Color[i]);
                 else _shadowMappingShader->setVec3("uColor", glm::vec3(1.0f));
                 if(!_objectlist.color_flag[i] && _texturelist.texture[_objectlist.TextureIndex[i]] != nullptr){
-                    glActiveTexture(GL_TEXTURE0);
+                    glActiveTexture(GL_TEXTURE1);
                     _texturelist.texture[_objectlist.TextureIndex[i]]->bind();
+                    glUniform1i(glGetUniformLocation(_shadowMappingShader->_handle, "uAlbedoMap"), 1);
                     _objectlist.ModelList[i]->draw();
                     _texturelist.texture[_objectlist.TextureIndex[i]]->unbind();
                 }
@@ -375,13 +386,12 @@ void Scene::drawList(){
         }
         break;
 
-        case ShadowRenderMode::PCSS: {
+        case ShadowRenderMode::PCF: {
             glm::vec3 lightPos = LightList[0]->position;
             glm::mat4 lightProjection, lightView, lightMatrix;
-            float near_plane = 1.0f, far_plane = 7.5f;
-            float size = 10.0f;
+            float size = 20.0f;
             
-            lightProjection = glm::ortho(-size, size, -size, size, near_plane, far_plane);
+            lightProjection = glm::ortho(-size, size, -size, size, LightList[0]->near_plane, LightList[0]->far_plane);
             lightView = glm::lookAt(lightPos, lightPos + LightList[0]->getFront(), LightList[0]->getUp());
             lightMatrix = lightProjection * lightView;
 
@@ -407,11 +417,79 @@ void Scene::drawList(){
             // camera pass
             for(int i = 0; i < _objectlist.ModelList.size(); i++){
                 if(!_objectlist.visible[i]) continue;           
-                _shadowMappingShader->use();
+                _pcfShader->use();
 
-                _shadowMappingShader->setInt("uShadowMap", 0);
+                _pcfShader->setInt("uShadowMap", 0);
                 glActiveTexture(GL_TEXTURE0);
                 glBindTexture(GL_TEXTURE_2D, depthMap);
+                glUniform1i(glGetUniformLocation(_pcfShader->_handle, "uShadowMap"), 0);
+
+                const glm::mat4 projection = _camera->getProjectionMatrix();
+                const glm::mat4 view = _camera->getViewMatrix();
+                
+                _pcfShader->setMat4("projection", projection);
+                _pcfShader->setMat4("view", view);
+                _pcfShader->setMat4("model", _objectlist.ModelList[i]->getModelMatrix());
+                _pcfShader->setMat4("uLightSpaceMatrix", lightMatrix);
+
+                _pcfShader->setVec3("uLightPos", LightList[0]->position);
+                _pcfShader->setVec3("uCameraPos", _camera->position);
+                _pcfShader->setVec3("uLightRadiance", LightList[0]->radiance);
+
+                _pcfShader->setFloat("uRoughness", _objectlist.roughness[i]);
+                _pcfShader->setFloat("uMetallic", _objectlist.metallic[i]);
+
+                if(_objectlist.color_flag[i]) _pcfShader->setVec3("uColor", _objectlist.Color[i]);
+                else _pcfShader->setVec3("uColor", glm::vec3(1.0f));
+                if(!_objectlist.color_flag[i] && _texturelist.texture[_objectlist.TextureIndex[i]] != nullptr){
+                    glActiveTexture(GL_TEXTURE1);
+                    _texturelist.texture[_objectlist.TextureIndex[i]]->bind();
+                    glUniform1i(glGetUniformLocation(_pcfShader->_handle, "uAlbedoMap"), 1);
+                    _objectlist.ModelList[i]->draw();
+                    _texturelist.texture[_objectlist.TextureIndex[i]]->unbind();
+                }
+                else _objectlist.ModelList[i]->draw();
+            }
+        }
+        break;
+
+        case ShadowRenderMode::PCSS: {
+            glm::vec3 lightPos = LightList[0]->position;
+            glm::mat4 lightProjection, lightView, lightMatrix;
+            float size = 20.0f;
+            
+            lightProjection = glm::ortho(-size, size, -size, size, LightList[0]->near_plane, LightList[0]->far_plane);
+            lightView = glm::lookAt(lightPos, lightPos + LightList[0]->getFront(), LightList[0]->getUp());
+            lightMatrix = lightProjection * lightView;
+
+            // light pass
+            _shadowShader->use();
+            glViewport(0, 0, _shadowWidth, _shadowHeight);
+            glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
+                glClear(GL_DEPTH_BUFFER_BIT);
+            
+            _shadowShader->setMat4("uLightSpaceMatrix", lightMatrix);           
+            for(int i = 0; i < _objectlist.ModelList.size(); i++){
+                if(!_objectlist.visible[i]) continue;
+
+                _shadowShader->setMat4("model", _objectlist.ModelList[i]->getModelMatrix());
+                _objectlist.ModelList[i]->draw();
+            }
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            
+            // reset viewport
+            glViewport(0, 0, _windowWidth, _windowHeight);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+            // camera pass
+            for(int i = 0; i < _objectlist.ModelList.size(); i++){
+                if(!_objectlist.visible[i]) continue;           
+                _pcssShader->use();
+
+                _pcssShader->setInt("uShadowMap", 0);
+                glActiveTexture(GL_TEXTURE0);
+                glBindTexture(GL_TEXTURE_2D, depthMap);
+                glUniform1i(glGetUniformLocation(_pcssShader->_handle, "uShadowMap"), 0);
 
                 const glm::mat4 projection = _camera->getProjectionMatrix();
                 const glm::mat4 view = _camera->getViewMatrix();
@@ -431,8 +509,9 @@ void Scene::drawList(){
                 if(_objectlist.color_flag[i]) _pcssShader->setVec3("uColor", _objectlist.Color[i]);
                 else _pcssShader->setVec3("uColor", glm::vec3(1.0f));
                 if(!_objectlist.color_flag[i] && _texturelist.texture[_objectlist.TextureIndex[i]] != nullptr){
-                    glActiveTexture(GL_TEXTURE0);
+                    glActiveTexture(GL_TEXTURE1);
                     _texturelist.texture[_objectlist.TextureIndex[i]]->bind();
+                    glUniform1i(glGetUniformLocation(_pcssShader->_handle, "uAlbedoMap"), 1);
                     _objectlist.ModelList[i]->draw();
                     _texturelist.texture[_objectlist.TextureIndex[i]]->unbind();
                 }
@@ -482,8 +561,8 @@ void Scene::drawGUI()  {
         ImGui::Text("Choose ShadowRenderMode");
         ImGui::RadioButton("None",(int *)&_ShadowRenderMode,(int)ShadowRenderMode::None);ImGui::SameLine();
         ImGui::RadioButton("ShadowMapping",(int *)&_ShadowRenderMode,(int)ShadowRenderMode::ShadowMapping);ImGui::SameLine();
-        ImGui::RadioButton("PCSS",(int *)&_ShadowRenderMode,(int)ShadowRenderMode::PCSS);ImGui::SameLine();
-        ImGui::RadioButton("SSDO",(int *)&_ShadowRenderMode,(int)ShadowRenderMode::SSDO);
+        ImGui::RadioButton("PCF",(int *)&_ShadowRenderMode,(int)ShadowRenderMode::PCF);ImGui::SameLine();
+        ImGui::RadioButton("PCSS",(int *)&_ShadowRenderMode,(int)ShadowRenderMode::PCSS);
         ImGui::Separator();
         ImGui::Text("Game Options");
         ImGui::Checkbox("Collision detect",&collision_flag);

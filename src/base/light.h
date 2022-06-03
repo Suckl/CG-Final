@@ -11,6 +11,7 @@ public:
 	glm::vec3 color = { 1.0f, 1.0f, 1.0f };
 	glm::vec3 radiance = { 2.0f, 2.0f, 2.0f };
 	glm::mat4 lightMVP;
+	float near_plane, far_plane;
 };
 
 class AmbientLight : public Light {

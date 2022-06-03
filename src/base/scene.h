@@ -10,7 +10,7 @@
 #include"application.h"
 
 enum class ShadowRenderMode {
-	None,ShadowMapping, PCSS, SSDO
+	None,ShadowMapping, PCF, PCSS
 };
 
 enum class ScreenShotMode {
@@ -55,6 +55,7 @@ private:
     std::shared_ptr<GLSLProgram> _pbrShader;
     std::shared_ptr<GLSLProgram> _shadowShader;
     std::shared_ptr<GLSLProgram> _shadowMappingShader;
+    std::shared_ptr<GLSLProgram> _pcfShader;
     std::shared_ptr<GLSLProgram> _pcssShader;
     std::shared_ptr<GLSLProgram> _lightCubeShader;
 
@@ -74,6 +75,7 @@ private:
     void initPBRShader();
     void initShadowShader();
     void initShadowMappingShader();
+    void initPcfShader();
     void initPcssShader();
     void initLightCubeShader();
 
