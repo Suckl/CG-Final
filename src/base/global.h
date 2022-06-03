@@ -31,12 +31,19 @@ void Scene::SceneSave(){
         ofs<<_texturelist.texturename[i]<<std::endl;
         ofs<<_texturelist.filepath[i]<<std::endl;
     }
+    ofs<<"SERIES"<<std::endl;
+    ofs<<_serise.max<<std::endl;
+    ofs<<_serise.sequence.size()<<std::endl;
+    for(int i=0;i<_serise.sequence.size();i++){
+        ofs<<_serise.sequence[i]<<std::endl;
+    }
     ofs.close();
 }
 
-void Scene::SceneLoad(){
+bool Scene::SceneLoad(){
     std::ifstream ifs;
     ifs.open("../media/info.cgf");
+    if(!ifs) return false;
     std::string buf;
     while(getline(ifs,buf)){
         if(buf=="OBJ"){
@@ -76,9 +83,18 @@ void Scene::SceneLoad(){
             _texturelist.texture.push_back(nullptr);
 	        _texturelist.texture[index].reset(new Texture2D(_texturelist.filepath[index]));
         }
+        if(buf=="SERIES"){
+            getline(ifs,buf);
+            _serise.max=std::stoi(buf);getline(ifs,buf);
+            int size=std::stoi(buf);
+            for(int i=0;i<size;i++){
+                getline(ifs,buf);
+                _serise.sequence.push_back(std::stoi(buf));
+            }
+        }
     }
-
     ifs.close();
+    return true;
 }
 
 void Scene::exportOBJ(const std::vector<Vertex> _vertices,const std::vector<uint32_t> _indices,std::string filename){

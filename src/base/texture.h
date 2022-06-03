@@ -21,6 +21,8 @@ public:
 
 	GLuint getHandle() const;
 
+	bool success=true;
+	
 protected:
 	GLuint _handle = {};
 
@@ -54,6 +56,8 @@ public:
 	void bind() const override;
 
 	void unbind() const override;
+
+	
 
 private:
 	std::vector<std::string> _paths;

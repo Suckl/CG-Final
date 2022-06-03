@@ -17,7 +17,8 @@ Model::Model(const std::string& filepath) {
     std::string mtlBaseDir = filepath.substr(0, index + 1);
 
     if (!microobj::MicroLoadObj(&attrib, &face,filepath.c_str())){
-        throw std::runtime_error("load " + filepath + " failure");
+        // throw std::runtime_error("load " + filepath + " failure");
+        success=false;
     }
     
     std::vector<Vertex> vertices;
