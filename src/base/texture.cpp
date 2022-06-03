@@ -37,9 +37,11 @@ Texture2D::Texture2D(const std::string path): _path(path) {
 	unsigned char* data = stbi_load(_path.c_str(), &width, &height, &channels, 0);
 	if (data == nullptr) {
 		cleanup();
-		throw std::runtime_error("load " + path + " failure");
+		// throw std::runtime_error("load " + path + " failure");
+		success=false;
 	}
-
+	else
+	{
 	// choose image format
 	GLenum format = GL_RGB;
 	switch (channels) {
@@ -88,6 +90,7 @@ Texture2D::Texture2D(const std::string path): _path(path) {
 		ss << "texture object operation failure, (code " << error << ")";
 		cleanup();
 		throw std::runtime_error(ss.str());
+	}
 	}
 }
 

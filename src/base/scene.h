@@ -39,6 +39,11 @@ struct TextureList{
     std::vector<std::string> filepath;
 };
 
+struct Serise{
+    std::vector<int> sequence;
+    int max;
+};
+
 class Scene:public Application{
 public:
     Scene(const Options& options);
@@ -51,6 +56,7 @@ private:
     std::vector<std::unique_ptr<Light>> LightList;
     std::unique_ptr<PerspectiveCamera> _camera;
     std::unique_ptr<SkyBox> _skybox;
+    Serise _serise;//如果是-1，表示这个物体照常被绘制。如果是其他值i，表示这个物体在顺序i时被绘制
 
     std::shared_ptr<GLSLProgram> _pbrShader;
     std::shared_ptr<GLSLProgram> _shadowShader;
@@ -65,6 +71,7 @@ private:
 
     bool collision_flag=false;
     bool mouse_capture_flag=false;
+    bool series_flag=false;
     const float _cameraMoveSpeed = 10.0f;
     const float cameraRotateSpeed = 0.1f;
 
@@ -92,9 +99,14 @@ private:
     void handleInput() override;
 	void renderFrame() override;
     void SceneSave();
-    void SceneLoad();
+    bool SceneLoad();
     void deleteModel(int index);
     void exportOBJ(const std::vector<Vertex> _vertices,const std::vector<uint32_t> _indices,std::string filename);
     void exportTransOBJ(const std::vector<Vertex> _vertices,const std::vector<uint32_t> _indices,std::string filename,glm::mat4 model);
     void AddCube(float l,std::string name);
+    void AddSphere(float r,std::string name);
+    void AddCylinder(float r,float h,std::string name);
+    void AddPrism(float r,float h,std::string name,int sides);
+    void AddFrustum(float r1,float r2,float h,std::string name,int sides);
+    void AddCone(float r,float h,std::string name);
 };

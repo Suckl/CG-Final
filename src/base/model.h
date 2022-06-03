@@ -33,6 +33,8 @@ public:
 
     virtual void drawBoundingBox() const;
 
+    bool success=true;
+
 
     // vertices of the table represented in model's own coordinate
     std::vector<Vertex> _vertices;

@@ -18,15 +18,12 @@ const std::vector<std::string> skyboxTexturePaths = {
 Scene::Scene(const Options& options): Application(options) {
 
     
-	// init model
-    SceneLoad();
-    // addModel(modelPath,"earth");
-	//addModel(modelPath,"planet");
-	//_objectlist.ModelList[1]->scale = glm::vec3(5.0f, 5.0f, 5.0f);
-
-	// init materials
-    // addTexture(earthTexturePath,"earthTexture");
-    // addTexture(planetTexturePath,"planetTexture");
+	// init scene
+    if(!SceneLoad()){
+        addModel(modelPath,"earth");
+        addTexture(earthTexturePath,"earthTexture");
+        addTexture(planetTexturePath,"planetTexture");
+    }
 
 	// init camera
 	_camera.reset(new PerspectiveCamera(
@@ -44,6 +41,8 @@ Scene::Scene(const Options& options): Application(options) {
 
 	// init skybox
 	_skybox.reset(new SkyBox(skyboxTexturePaths));
+    // init Series
+    _serise.max=0;
 
 	// init shaders
     initPBRShader();
@@ -210,9 +209,11 @@ void Scene::renderFrame() {
 	glEnable(GL_DEPTH_TEST);
 	const glm::mat4 projection = _camera->getProjectionMatrix();
 	const glm::mat4 view = _camera->getViewMatrix();
-    
+
+ 
 	// draw scene
 	drawList();
+
     
     // draw skybox
 	_skybox->draw(projection, view);
@@ -221,10 +222,14 @@ void Scene::renderFrame() {
 }
 
 bool Scene::addModel(const std::string filename,const std::string name){
-    _objectlist.filepath.push_back(filename);
     _objectlist.ModelList.push_back(nullptr);
-    _objectlist.objectname.push_back(name);
     _objectlist.ModelList[_objectlist.ModelList.size()-1].reset(new Model(filename));
+    if(!_objectlist.ModelList[_objectlist.ModelList.size()-1]->success){
+        _objectlist.ModelList.pop_back();
+        return false;
+    }
+    _objectlist.filepath.push_back(filename);
+    _objectlist.objectname.push_back(name);
     _objectlist.visible.push_back(true);
     _objectlist.Color.push_back(glm::vec3(1.0));
     _objectlist.TextureIndex.push_back(0);
@@ -246,10 +251,14 @@ void Scene::deleteModel(int index){
 }
 
 bool Scene::addTexture(const std::string filename,const std::string name){
-    _texturelist.filepath.push_back(filename);
-    _texturelist.texturename.push_back(name);
     _texturelist.texture.push_back(nullptr);
 	_texturelist.texture[_texturelist.texture.size()-1].reset(new Texture2D(filename));
+    if(!_texturelist.texture[_texturelist.texture.size()-1]->success){
+        _texturelist.texture.pop_back();
+        return false;
+    }
+    _texturelist.filepath.push_back(filename);
+    _texturelist.texturename.push_back(name);
 }
 
 void Scene::debugShadowMap(float near_plane, float far_plane) {
@@ -288,10 +297,16 @@ void Scene::debugShadowMap(float near_plane, float far_plane) {
 }
 
 void Scene::drawList(){
+    static int count = 0;
+    count++;
+    if(count>=(_serise.max+1)*20) count=0;
     switch(_ShadowRenderMode){
         case ShadowRenderMode::None:
         for(int i=0;i<_objectlist.ModelList.size();i++){
             if(!_objectlist.visible[i]) continue;
+            if(series_flag&&i<_serise.sequence.size()&&_serise.max>-1&&_serise.sequence[i]!=-1){
+                if (_serise.sequence[i]!=count/20) continue;
+            }
             _pbrShader->use();
             const glm::mat4 projection = _camera->getProjectionMatrix();
             const glm::mat4 view = _camera->getViewMatrix();
@@ -578,6 +593,7 @@ void Scene::drawGUI()  {
         ImGui::Separator();
         ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
         ImGui::Checkbox("wireframe", &wireframe);
+        ImGui::Checkbox("Draw series", &series_flag);
 		ImGui::End();
 	}
     if(help_flags)drawGUIhelp(help_flags);
@@ -605,8 +621,8 @@ void Scene::drawGUIfile(bool &flag){
     if(ImGui::Button("Load OBJ file")){
         std::string filename =filepath;
         std::string name=loadname;
-        addModel(filename,loadname);
-        filename="Load Success!";
+        if (!addModel(filename,loadname)) filename="Load Failed!";
+        else filename="Load Success!";
         name=" ";
         strcpy(loadname,name.c_str());
         strcpy(filepath,filename.c_str());
@@ -615,8 +631,8 @@ void Scene::drawGUIfile(bool &flag){
     if(ImGui::Button("Load Texture file")){
         std::string filename =filepath;
         std::string name=loadname;
-        addTexture(filename,loadname);
-        filename="Load Success!";
+        if(!addTexture(filename,loadname)) filename="Load Failed!";
+        else filename="Load Success!";
         name=" ";
         strcpy(loadname,name.c_str());
         strcpy(filepath,filename.c_str());
@@ -641,28 +657,77 @@ void Scene::drawGUIobj(bool &flag){
     ImGui::Text("rotations and locations.For normal object, you can set ");
     ImGui::Text("roughness and color.For light, you can set intensity and color.");
     if(ImGui::CollapsingHeader("Add Fundmental Elements")){
+        static float Cradius=1.0;
+        static float Cheight=3.0;
         static float lenth=1.0;
+        static float Sradius=1.0;
         static char loadname[128] = "Type your object name here";
+        static int Psides=3;
+        static float Pheight=3.0;
+        static float Pradius=1.0;
+        static int Fsides=3;
+        static float Fheight=3.0;
+        static float Fradius1=1.0;
+        static float Fradius2=2.0;
+        static float Coradius=1.0;
+        static float Coheight=1.5;
         ImGui::InputText("input file name", loadname, IM_ARRAYSIZE(loadname));
-        ImGui::InputFloat("Cube Side Lenth",&lenth);
+        ImGui::NewLine();
+        ImGui::SliderFloat("Cube Side Lenth",&lenth,0.1,10.0,"%.3f");
         if(ImGui::Button("Press to Create a Cube")){
             std::string name =loadname;
             AddCube(lenth/2,name);
             name="Creat Success!";
             strcpy(loadname,name.c_str());
         }
-        if(ImGui::Button("Sphere")){
-
+        ImGui::Separator();
+        ImGui::SliderFloat("Sphere radius",&Sradius,0.1,10.0,"%.3f");
+        if(ImGui::Button("Press to Create a Sphere")){
+            std::string name =loadname;
+            AddSphere(Sradius,name);
+            name="Creat Success!";
+            strcpy(loadname,name.c_str());
         }
-        if(ImGui::Button("Cylinder")){
-
+        ImGui::Separator();
+        ImGui::SliderFloat("Cylinder radius",&Cradius,0.1,10.0,"%.3f");
+        ImGui::SliderFloat("Cylinder height",&Cheight,0.1,10.0,"%.3f");
+        if(ImGui::Button("Press to Create a Cylinder")){
+            std::string name =loadname;
+            AddCylinder(Cradius,Cheight,name);
+            name="Creat Success!";
+            strcpy(loadname,name.c_str());
         }
-        if(ImGui::Button("Cone")){
-
+        ImGui::Separator();
+        ImGui::SliderFloat("Cone radius",&Coradius,0.1,10.0,"%.3f");
+        ImGui::SliderFloat("Cone height",&Coheight,0.1,10.0,"%.3f");
+        if(ImGui::Button("Press to Create a Cone")){
+            std::string name =loadname;
+            AddCone(Coradius,Coheight*2,name);
+            name="Creat Success!";
+            strcpy(loadname,name.c_str());
         }
-        if(ImGui::Button("Prism")){
-
+        ImGui::Separator();
+        ImGui::SliderInt("Prism  edges",&Psides,3,20);
+        ImGui::SliderFloat("Prism radius",&Pradius,0.1,10.0,"%.3f");
+        ImGui::SliderFloat("Prism height",&Pheight,0.1,10.0,"%.3f");
+        if(ImGui::Button("Press to Create a Prism")){
+            std::string name =loadname;
+            AddPrism(Pradius,Pheight,name,Psides);
+            name="Creat Success!";
+            strcpy(loadname,name.c_str());
         }
+        ImGui::Separator();
+        ImGui::SliderInt("Frustum  edges",&Fsides,3,20);
+        ImGui::SliderFloat("Frustum radius1",&Fradius1,0.1,10.0,"%.3f");
+        ImGui::SliderFloat("Frustum radius2",&Fradius2,0.1,10.0,"%.3f");
+        ImGui::SliderFloat("Frustum height",&Fheight,0.1,10.0,"%.3f");
+        if(ImGui::Button("Press to Create a Frustum")){
+            std::string name =loadname;
+            AddFrustum(Fradius1,Fradius2,Fheight,name,Fsides);
+            name="Creat Success!";
+            strcpy(loadname,name.c_str());
+        }
+        ImGui::Separator();
     }
     if(ImGui::CollapsingHeader("Object List")){
         for (int i =0;i<_objectlist.ModelList.size();i++){
@@ -671,8 +736,7 @@ void Scene::drawGUIobj(bool &flag){
                 const float rota_angle=0.05f;
                 float position[3]={_objectlist.ModelList[i]->position.x,_objectlist.ModelList[i]->position.y,_objectlist.ModelList[i]->position.z};
                 float scale[3] = {_objectlist.ModelList[i]->scale.x,_objectlist.ModelList[i]->scale.y,_objectlist.ModelList[i]->scale.z};
-                static float scaleinput[3]={1.0,1.0,1.0};
-                static float positioninput[3]={1.0,1.0,1.0};
+                static char newname[128]="Type your new object name here";
                 bool color_flag=_objectlist.color_flag[i];
                 float roughness=_objectlist.roughness[i];
                 float metallic=_objectlist.metallic[i];
@@ -689,10 +753,6 @@ void Scene::drawGUIobj(bool &flag){
                     scale[2]=scale[1]=scale[0];  
                 }
                 ImGui::DragFloat3("Position",position,0.005f,-100.0f,100.0f,"%.3f");
-                ImGui::InputFloat3("ScaleType",scaleinput);ImGui::SameLine();
-                if(ImGui::Button("Enter Scale")) {scale[0]=scaleinput[0];scale[1]=scaleinput[1];scale[2]=scaleinput[2];}
-                ImGui::InputFloat3("PositionType",positioninput);ImGui::SameLine();
-                if(ImGui::Button("Enter Position")) {position[0]=positioninput[0];position[1]=positioninput[1];position[2]=positioninput[2];}
                 _objectlist.ModelList[i]->scale=glm::vec3{scale[0],scale[1],scale[2]};
                 _objectlist.ModelList[i]->position=glm::vec3{position[0],position[1],position[2]};
                 float spacing = ImGui::GetStyle().ItemInnerSpacing.x;
@@ -746,8 +806,29 @@ void Scene::drawGUIobj(bool &flag){
                 if(ImGui::Button("Export transformed model to filename.obj")) 
                     exportTransOBJ(_objectlist.ModelList[i]->_vertices,_objectlist.ModelList[i]->_indices,_objectlist.objectname[i],_objectlist.ModelList[i]->getModelMatrix());
                 if(_objectlist.ModelList.size()>1&&ImGui::Button("Delete this object")) deleteModel(i);
+                ImGui::InputText("Change object name", newname, IM_ARRAYSIZE(newname));ImGui::SameLine();
+                if(ImGui::Button("Enter name")){
+                    std::string name=newname;
+                    _objectlist.objectname[i]=name;
+                    name="Change Success!";
+                    name=" ";
+                    strcpy(newname,name.c_str());
+                }
                 ImGui::TreePop();
             }
+        }
+    }
+    if(ImGui::CollapsingHeader("Draw Series")){
+        if(ImGui::Button("Init Series")){
+            _serise.sequence.clear();
+            for (int i = 0; i < _objectlist.ModelList.size(); i++){
+                _serise.sequence.push_back(-1);
+            }
+        }
+        _serise.max=-1;
+        for(int i=0;i<_serise.sequence.size();i++){
+            ImGui::SliderInt(_objectlist.objectname[i].c_str(),&_serise.sequence[i],-1,20);
+            if(_serise.sequence[i]>_serise.max) _serise.max=_serise.sequence[i];
         }
     }
     ImGui::End();
