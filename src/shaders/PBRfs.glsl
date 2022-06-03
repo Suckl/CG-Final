@@ -1,7 +1,7 @@
 #version 330 core
 uniform vec3 uCameraPos;
 uniform vec3 uLightRadiance;
-uniform vec3 uLightDir;
+uniform vec3 uLightPos;
 
 uniform sampler2D uAlbedoMap;
 uniform float uMetallic;
@@ -41,6 +41,7 @@ vec3 fresnelSchlick(vec3 F0, vec3 V, vec3 H)
 }
 
 void main(void) {
+  vec3 uLightDir = normalize(uLightPos);
   vec3 albedo = pow(texture2D(uAlbedoMap, vTextureCoord).rgb, vec3(2.2));
   if(albedo==vec3(0.0)) albedo=uColor;
   vec3 N = normalize(vNormal);
