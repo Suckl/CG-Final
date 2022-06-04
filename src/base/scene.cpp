@@ -31,13 +31,10 @@ Scene::Scene(const Options& options): Application(options) {
 	_camera->position.z = 10.0f;
 
 	// init light
-    LightList.push_back(nullptr);
-	LightList[0].reset(new DirectionalLight());
+	_directionlight.reset(new DirectionalLight());
 	// LightList[0]->rotation = glm::angleAxis(glm::radians(45.0f), -glm::vec3(1.0f, 1.0f, 1.0f));
     // LightList[0]->position = glm::vec3(3.0f,0.0f,0.0f);
-    LightList[0]->position = glm::vec3(0.5f, 4.0f, 2.0f);
-    LightList[0]->near_plane = 2.0f;
-    LightList[0]->far_plane = 18.0f;
+    _directionlight->position =glm::vec3(0.5f, 4.0f, 2.0f);
 
 	// init skybox
 	_skybox.reset(new SkyBox(skyboxTexturePaths));
@@ -45,12 +42,7 @@ Scene::Scene(const Options& options): Application(options) {
     _serise.max=0;
 
 	// init shaders
-    initPBRShader();
-    initShadowShader();
-    initShadowMappingShader();
-    initPcfShader();
-    initPcssShader();
-    initLightCubeShader();
+    initShader();
 
 	// init imgui
 	IMGUI_CHECKVERSION();
@@ -86,42 +78,27 @@ Scene::~Scene() {
 	ImGui::DestroyContext();
 }
 
-void Scene::initPBRShader(){
+void Scene::initShader(){
     _pbrShader.reset(new GLSLProgram); 
 	_pbrShader->attachVertexShaderFromFile("../../src/shaders/PBRvs.glsl");
 	_pbrShader->attachFragmentShaderFromFile("../../src/shaders/PBRfs.glsl");
 	_pbrShader->link();
-}
-
-void Scene::initShadowShader(){
     _shadowShader.reset(new GLSLProgram);
     _shadowShader->attachVertexShaderFromFile("../../src/shaders/Shadowvs.glsl");
     _shadowShader->attachFragmentShaderFromFile("../../src/shaders/Shadowfs.glsl");
     _shadowShader->link();
-}
-
-void Scene::initShadowMappingShader(){
     _shadowMappingShader.reset(new GLSLProgram);
     _shadowMappingShader->attachVertexShaderFromFile("../../src/shaders/ShadowMappingvs.glsl");
     _shadowMappingShader->attachFragmentShaderFromFile("../../src/shaders/ShadowMappingfs.glsl");
     _shadowMappingShader->link();
-}
-
-void Scene::initPcfShader(){
     _pcfShader.reset(new GLSLProgram);
     _pcfShader->attachVertexShaderFromFile("../../src/shaders/ShadowMappingvs.glsl");
     _pcfShader->attachFragmentShaderFromFile("../../src/shaders/PCFfs.glsl");
     _pcfShader->link();
-}
-
-void Scene::initPcssShader(){
     _pcssShader.reset(new GLSLProgram);
     _pcssShader->attachVertexShaderFromFile("../../src/shaders/ShadowMappingvs.glsl");
     _pcssShader->attachFragmentShaderFromFile("../../src/shaders/PCSSfs.glsl");
     _pcssShader->link();
-}
-
-void Scene::initLightCubeShader(){
     _lightCubeShader.reset(new GLSLProgram);
     _lightCubeShader->attachVertexShaderFromFile("../../src/shaders/LightCubevs.glsl");
     _lightCubeShader->attachFragmentShaderFromFile("../../src/shaders/LightCubefs.glsl");
@@ -237,9 +214,10 @@ bool Scene::addModel(const std::string filename,const std::string name){
     _objectlist.visible.push_back(true);
     _objectlist.Color.push_back(glm::vec3(1.0));
     _objectlist.TextureIndex.push_back(0);
-    _objectlist.color_flag.push_back(false);
+    _objectlist.color_flag.push_back(true);
     _objectlist.roughness.push_back(0.5f);
     _objectlist.metallic.push_back(0.5f);
+    return true;
 }
 
 void Scene::deleteModel(int index){
@@ -263,6 +241,7 @@ bool Scene::addTexture(const std::string filename,const std::string name){
     }
     _texturelist.filepath.push_back(filename);
     _texturelist.texturename.push_back(name);
+    return true;
 }
 
 void Scene::debugShadowMap(float near_plane, float far_plane) {
@@ -318,10 +297,10 @@ void Scene::drawList(){
             _pbrShader->setMat4("view", view);
             _pbrShader->setMat4("model", _objectlist.ModelList[i]->getModelMatrix());
 
-            _pbrShader->setVec3("uLightPos", LightList[0]->position);
+            _pbrShader->setVec3("uLightPos", _directionlight->position);
             _pbrShader->setVec3("uCameraPos", _camera->position);
-            _pbrShader->setVec3("uLightRadiance", LightList[0]->radiance);
-            _pbrShader->setFloat("ka", LightList[0]->ka);
+            _pbrShader->setVec3("uLightRadiance", _directionlight->radiance);
+            _pbrShader->setFloat("ka", _directionlight->ka);
 
             _pbrShader->setFloat("uRoughness", _objectlist.roughness[i]);
             _pbrShader->setFloat("uMetallic", _objectlist.metallic[i]);
@@ -338,12 +317,13 @@ void Scene::drawList(){
         break;
 
         case ShadowRenderMode::ShadowMapping: {
-            glm::vec3 lightPos = LightList[0]->position;
+            glm::vec3 lightPos = _directionlight->position;
             glm::mat4 lightProjection, lightView, lightMatrix;
-            float size = 20.0f;
+            float size = 50.0f;
             
-            lightProjection = glm::ortho(-size, size, -size, size, LightList[0]->near_plane, LightList[0]->far_plane);
-            //lightView = glm::lookAt(lightPos, lightPos + LightList[0]->getFront(), LightList[0]->getUp());
+            lightProjection = glm::ortho(-size, size, -size, size, 0.1f, 100.0f);
+            // lightProjection =glm::perspective(glm::radians(45.0f), 1.0f,0.1f, 100.0f);
+            // lightView = glm::lookAt(lightPos, lightPos + LightList[0]->getFront(), LightList[0]->getUp());
             lightView = glm::lookAt(lightPos, glm::vec3(0.0f), glm::vec3(0.0, 1.0, 0.0));;
             lightMatrix = lightProjection * lightView;
 
@@ -393,10 +373,10 @@ void Scene::drawList(){
                 _shadowMappingShader->setMat4("model", _objectlist.ModelList[i]->getModelMatrix());
                 _shadowMappingShader->setMat4("uLightSpaceMatrix", lightMatrix);
 
-                _shadowMappingShader->setVec3("uLightPos", LightList[0]->position);
+                _shadowMappingShader->setVec3("uLightPos", _directionlight->position);
                 _shadowMappingShader->setVec3("uCameraPos", _camera->position);
-                _shadowMappingShader->setVec3("uLightRadiance", LightList[0]->radiance);
-                _shadowMappingShader->setFloat("ka", LightList[0]->ka);
+                _shadowMappingShader->setVec3("uLightRadiance", _directionlight->radiance);
+                _shadowMappingShader->setFloat("ka", _directionlight->ka);
 
                 _shadowMappingShader->setFloat("uRoughness", _objectlist.roughness[i]);
                 _shadowMappingShader->setFloat("uMetallic", _objectlist.metallic[i]);
@@ -417,12 +397,13 @@ void Scene::drawList(){
         break;
 
         case ShadowRenderMode::PCF: {
-            glm::vec3 lightPos = LightList[0]->position;
+            glm::vec3 lightPos = _directionlight->position;
             glm::mat4 lightProjection, lightView, lightMatrix;
-            float size = 20.0f;
+            float size = 50.0f;
             
-            lightProjection = glm::ortho(-size, size, -size, size, LightList[0]->near_plane, LightList[0]->far_plane);
-            //lightView = glm::lookAt(lightPos, lightPos + LightList[0]->getFront(), LightList[0]->getUp());
+            lightProjection = glm::ortho(-size, size, -size, size, 0.1f, 100.0f);
+            // lightProjection =glm::perspective(glm::radians(90.0f), 1.0f,0.1f, 100.0f);
+            // lightView = glm::lookAt(lightPos, lightPos + LightList[0]->getFront(), LightList[0]->getUp());
             lightView = glm::lookAt(lightPos, glm::vec3(0.0f), glm::vec3(0.0, 1.0, 0.0));
             lightMatrix = lightProjection * lightView;
 
@@ -469,10 +450,10 @@ void Scene::drawList(){
                 _pcfShader->setMat4("model", _objectlist.ModelList[i]->getModelMatrix());
                 _pcfShader->setMat4("uLightSpaceMatrix", lightMatrix);
 
-                _pcfShader->setVec3("uLightPos", LightList[0]->position);
+                _pcfShader->setVec3("uLightPos", _directionlight->position);
                 _pcfShader->setVec3("uCameraPos", _camera->position);
-                _pcfShader->setVec3("uLightRadiance", LightList[0]->radiance);
-                _pcfShader->setFloat("ka", LightList[0]->ka);
+                _pcfShader->setVec3("uLightRadiance", _directionlight->radiance);
+                _pcfShader->setFloat("ka", _directionlight->ka);
 
                 _pcfShader->setFloat("uRoughness", _objectlist.roughness[i]);
                 _pcfShader->setFloat("uMetallic", _objectlist.metallic[i]);
@@ -493,11 +474,11 @@ void Scene::drawList(){
         break;
 
         case ShadowRenderMode::PCSS: {
-            glm::vec3 lightPos = LightList[0]->position;
+            glm::vec3 lightPos = _directionlight->position;
             glm::mat4 lightProjection, lightView, lightMatrix;
-            float size = 20.0f;
+            float size = 50.0f;
             
-            lightProjection = glm::ortho(-size, size, -size, size, LightList[0]->near_plane, LightList[0]->far_plane);
+            lightProjection = glm::ortho(-size, size, -size, size, 0.1f, 100.0f);
             //lightView = glm::lookAt(lightPos, lightPos + LightList[0]->getFront(), LightList[0]->getUp());
             lightView = glm::lookAt(lightPos, glm::vec3(0.0f), glm::vec3(0.0, 1.0, 0.0));
             lightMatrix = lightProjection * lightView;
@@ -543,10 +524,10 @@ void Scene::drawList(){
                 _pcssShader->setMat4("model", _objectlist.ModelList[i]->getModelMatrix());
                 _pcssShader->setMat4("uLightSpaceMatrix", lightMatrix);
 
-                _pcssShader->setVec3("uLightPos", LightList[0]->position);
+                _pcssShader->setVec3("uLightPos", _directionlight->position);
                 _pcssShader->setVec3("uCameraPos", _camera->position);
-                _pcssShader->setVec3("uLightRadiance", LightList[0]->radiance);
-                _pcssShader->setFloat("ka", LightList[0]->ka);
+                _pcssShader->setVec3("uLightRadiance", _directionlight->radiance);
+                _pcssShader->setFloat("ka", _directionlight->ka);
 
                 _pcssShader->setFloat("uRoughness", _objectlist.roughness[i]);
                 _pcssShader->setFloat("uMetallic", _objectlist.metallic[i]);
@@ -862,6 +843,17 @@ void Scene::drawGUIobj(bool &flag){
             if(_serise.sequence[i]>_serise.max) _serise.max=_serise.sequence[i];
         }
     }
+    if(ImGui::CollapsingHeader("Light Status")){
+        ImVec4 color = ImVec4(_directionlight->color.x, _directionlight->color.y, _directionlight->color.z,1.0f);
+        static float position[3]={_directionlight->position.x,_directionlight->position.y,_directionlight->position.z};
+        ImGui::DragFloat3("light position",position,0.05f,-10.0f,10.0f,"%.3f");
+        _directionlight->position=glm::vec3(position[0],position[1],position[2]);
+        ImGui::DragFloat("Light Intensity",&_directionlight->intensity,0.05f,0.1f,10.0f,"%.3f");
+        ImGui::ColorEdit3("Light Color",(float*)&color);
+        _directionlight->color=glm::vec3(color.x,color.y,color.z);
+        _directionlight->radiance=_directionlight->intensity*_directionlight->color;
+    }
+    
     ImGui::End();
 }
 

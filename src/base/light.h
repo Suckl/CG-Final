@@ -3,15 +3,10 @@
 class Light : public Object3D {
 public:
 	Light() = default;
-
 	~Light() = default;
-
-public:
 	float intensity = 1.0f;
 	glm::vec3 color = { 1.0f, 1.0f, 1.0f };
-	glm::vec3 radiance = { 2.0f, 2.0f, 2.0f };
-	glm::mat4 lightMVP;
-	float near_plane, far_plane;
+	glm::vec3 radiance = { 1.0f, 1.0f, 1.0f };
 	float ka = 0.3f;
 };
 
@@ -25,7 +20,6 @@ public:
 class DirectionalLight : public Light{
 public:
 	DirectionalLight() = default;
-
 	~DirectionalLight() = default;
 };
 

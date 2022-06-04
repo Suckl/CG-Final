@@ -17,6 +17,9 @@ void Scene::SceneSave(){
         ofs<<_objectlist.roughness[i]<<std::endl;
         ofs<<_objectlist.metallic[i]<<std::endl;
         ofs<<_objectlist.filepath[i]<<std::endl;
+        ofs<<_objectlist.ModelList[i]->scale.x<<std::endl;
+        ofs<<_objectlist.ModelList[i]->scale.y<<std::endl;
+        ofs<<_objectlist.ModelList[i]->scale.z<<std::endl;
         ofs<<_objectlist.ModelList[i]->position.x<<std::endl;
         ofs<<_objectlist.ModelList[i]->position.y<<std::endl;
         ofs<<_objectlist.ModelList[i]->position.z<<std::endl;
@@ -49,6 +52,7 @@ bool Scene::SceneLoad(){
         if(buf=="OBJ"){
             glm::vec3 color;
             glm::vec3 position;
+            glm::vec3 scale;
             glm::quat rotation;
             getline(ifs,buf);
             int index = std::stoi(buf);getline(ifs,buf);
@@ -65,6 +69,10 @@ bool Scene::SceneLoad(){
             _objectlist.ModelList.push_back(nullptr);
             _objectlist.filepath.push_back(buf);
             _objectlist.ModelList[index].reset(new Model(buf));getline(ifs,buf);
+            scale.x=std::stof(buf);getline(ifs,buf);
+            scale.y=std::stof(buf);getline(ifs,buf);
+            scale.z=std::stof(buf);getline(ifs,buf);
+            _objectlist.ModelList[index]->scale=scale;
             position.x=std::stof(buf);getline(ifs,buf);
             position.y=std::stof(buf);getline(ifs,buf);
             position.z=std::stof(buf);getline(ifs,buf);

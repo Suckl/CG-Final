@@ -43,7 +43,7 @@ vec3 fresnelSchlick(vec3 F0, vec3 V, vec3 H)
 
 void main(void) {
     vec3 ambient = ka * vec3(0.3);
-    vec3 uLightDir = normalize(uLightPos - vFragPos);
+    vec3 uLightDir = normalize(uLightPos);
     vec3 albedo = pow(texture2D(uAlbedoMap, vTextureCoord).rgb, vec3(2.2));
     if(albedo == vec3(0.0)) albedo = uColor;
 
