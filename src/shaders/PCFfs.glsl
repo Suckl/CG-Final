@@ -4,6 +4,7 @@
 uniform vec3 uCameraPos;
 uniform vec3 uLightRadiance;
 uniform vec3 uLightPos;
+uniform float ka;
 
 uniform sampler2D uAlbedoMap;
 uniform float uMetallic;
@@ -15,7 +16,7 @@ in vec3 vFragPos;
 in vec3 vNormal;
 
 // Shadow map related variables
-#define NUM_SAMPLES 20
+#define NUM_SAMPLES 50
 #define BLOCKER_SEARCH_NUM_SAMPLES NUM_SAMPLES
 #define PCF_NUM_SAMPLES NUM_SAMPLES
 #define NUM_RINGS 10
@@ -68,7 +69,7 @@ vec3 fresnelSchlick(vec3 F0, vec3 V, vec3 H)
 
 vec3 PBRcolor()
 {
-     vec3 uLightDir = normalize(uLightPos);
+     vec3 uLightDir = normalize(uLightPos - vFragPos);
 
     vec3 albedo = pow(texture2D(uAlbedoMap, vTextureCoord).rgb, vec3(2.2));
     if(albedo==vec3(0.0)) albedo=uColor;
@@ -95,7 +96,7 @@ vec3 PBRcolor()
     vec3 BRDF = numerator / denominator;
 
     Lo += BRDF * radiance * NdotL;
-    vec3 color = Lo+vec3(0.001)*texture2D(uAlbedoMap, vTextureCoord).rgb;
+    vec3 color = Lo + vec3(0.001) * texture2D(uAlbedoMap, vTextureCoord).rgb;
 
     color = color / (color + vec3(1.0));
     color = pow(color, vec3(1.0/2.2)); 
@@ -115,7 +116,7 @@ float unpack(vec4 rgbaDepth) {
 }
 
 float Bias(){
-    vec3 uLightDir = normalize(uLightPos);
+    vec3 uLightDir = normalize(uLightPos - vFragPos);
     float bias = max(0.05 * (1.0 - dot(vNormal, uLightDir)), 0.005);
     return  bias;
 }
@@ -146,7 +147,7 @@ float PCF(sampler2D shadowMap, vec4 coords) {
     // shadow map 的大小, 越大滤波的范围越小
     float textureSize = 2048.0;
     // 滤波的步长
-    float filterStride = 10.0;
+    float filterStride = 5.0;
     // 滤波窗口的范围
     float filterRange = 1.0 / textureSize * filterStride;
     // 有多少点不在阴影里
@@ -176,12 +177,14 @@ float useShadowMap(sampler2D shadowMap, vec4 shadowCoord){
 }
 
 void main(void) {
+    vec3 ambient = ka * vec3(0.3);
+
     float visibility;
     vec3 shadowCoord = vPositionFromLight.xyz / vPositionFromLight.w;
     shadowCoord = shadowCoord * 0.5 + 0.5;
 
     visibility = PCF(uShadowMap, vec4(shadowCoord, 1.0));
     
-    vec3 color = PBRcolor() * visibility;
+    vec3 color = PBRcolor() * visibility + ambient;
     gl_FragColor = vec4(color, 1.0);
 }

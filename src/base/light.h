@@ -12,6 +12,7 @@ public:
 	glm::vec3 radiance = { 2.0f, 2.0f, 2.0f };
 	glm::mat4 lightMVP;
 	float near_plane, far_plane;
+	float ka = 0.3f;
 };
 
 class AmbientLight : public Light {
