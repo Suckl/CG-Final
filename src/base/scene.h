@@ -53,7 +53,7 @@ private:
     ObjectList _objectlist;
     TextureList _texturelist;
     
-    std::vector<std::unique_ptr<Light>> LightList;
+    std::unique_ptr<DirectionalLight> _directionlight;
     std::unique_ptr<PerspectiveCamera> _camera;
     std::unique_ptr<SkyBox> _skybox;
     Serise _serise;//如果是-1，表示这个物体照常被绘制。如果是其他值i，表示这个物体在顺序i时被绘制
@@ -79,12 +79,7 @@ private:
     unsigned int depthMapFBO;
     unsigned int depthMap;
 
-    void initPBRShader();
-    void initShadowShader();
-    void initShadowMappingShader();
-    void initPcfShader();
-    void initPcssShader();
-    void initLightCubeShader();
+    void initShader();
 
     void drawList();
     void debugShadowMap(float near_plane, float far_plane);
