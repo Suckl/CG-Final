@@ -18,9 +18,13 @@ public:
 
     void attachFragmentShader(const std::string& code);
 
+    void attachGeometryShader(const std::string& code);
+
     void attachVertexShaderFromFile(const std::string& filePath);
 
     void attachFragmentShaderFromFile(const std::string& filePath);
+
+    void attachGeometryShaderFromFile(const std::string& filePath);
 
     void setTransformFeedbackVaryings(
         const std::vector<const char*>& varyings, GLenum bufferMode);

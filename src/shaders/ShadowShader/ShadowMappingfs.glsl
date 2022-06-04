@@ -16,7 +16,7 @@ in vec3 vFragPos;
 in vec3 vNormal;
 
 // Shadow map related variables
-#define NUM_SAMPLES 50
+#define NUM_SAMPLES 20
 #define BLOCKER_SEARCH_NUM_SAMPLES NUM_SAMPLES
 #define PCF_NUM_SAMPLES NUM_SAMPLES
 #define NUM_RINGS 10
@@ -27,18 +27,6 @@ in vec3 vNormal;
 
 uniform sampler2D uShadowMap;
 in vec4 vPositionFromLight;
-
-highp float rand_1to1(highp float x ) { 
-  // -1 -1
-  return fract(sin(x)*10000.0);
-}
-
-highp float rand_2to1(vec2 uv ) { 
-  // 0 - 1
-	const highp float a = 12.9898, b = 78.233, c = 43758.5453;
-	highp float dt = dot( uv.xy, vec2( a,b ) ), sn = mod( dt, PI );
-	return fract(sin(sn) * c);
-}
 
 // PBR part
 float DistributionGGX(vec3 N, vec3 H, float roughness)
@@ -106,65 +94,17 @@ vec3 PBRcolor()
 // Shadow part
 float unpack(vec4 rgbaDepth) {
     const vec4 bitShift = vec4(1.0, 1.0/256.0, 1.0/(256.0*256.0), 1.0/(256.0*256.0*256.0));
-    float depth =dot(rgbaDepth, bitShift) ;
-    //shadow map 没有深度值的地方默认是0 导致的有噪点
-    if(abs(depth)<EPS){
-      depth=1.0;
-    }
-
-    return  depth;
+    return dot(rgbaDepth, bitShift);
 }
 
+#define BIAS_SIZE 0.00233
+
 float Bias(){
-    vec3 uLightDir = normalize(uLightPos - vFragPos);
-    float bias = max(0.05 * (1.0 - dot(vNormal, uLightDir)), 0.005);
+    vec3 uLightDir = normalize(uLightPos);
+    float bias = max(BIAS_SIZE * (1.0 - dot(vNormal, uLightDir)), BIAS_SIZE);
     return  bias;
 }
 
-vec2 poissonDisk[NUM_SAMPLES];
-
-void poissonDiskSamples( const in vec2 randomSeed ) {
-
-    float ANGLE_STEP = PI2 * float( NUM_RINGS ) / float( NUM_SAMPLES );
-    float INV_NUM_SAMPLES = 1.0 / float( NUM_SAMPLES );
-
-    float angle = rand_2to1( randomSeed ) * PI2;
-    float radius = INV_NUM_SAMPLES;
-    float radiusStep = radius;
-
-    for( int i = 0; i < NUM_SAMPLES; i ++ ) {
-    poissonDisk[i] = vec2( cos( angle ), sin( angle ) ) * pow( radius, 0.75 );
-    radius += radiusStep;
-    angle += ANGLE_STEP;
-    }
-}
-
-float PCF(sampler2D shadowMap, vec4 coords) {
-    // 采样
-    poissonDiskSamples(coords.xy);
-    //uniformDiskSamples(coords.xy);
-
-    // shadow map 的大小, 越大滤波的范围越小
-    float textureSize = 2048.0;
-    // 滤波的步长
-    float filterStride = 5.0;
-    // 滤波窗口的范围
-    float filterRange = 1.0 / textureSize * filterStride;
-    // 有多少点不在阴影里
-    int noShadowCount = 0;
-    for( int i = 0; i < NUM_SAMPLES; i ++ ) {
-        vec2 sampleCoord = poissonDisk[i] * filterRange + coords.xy;
-        vec4 closestDepthVec = texture2D(shadowMap, sampleCoord); 
-        float closestDepth = unpack(closestDepthVec);
-        float currentDepth = coords.z;
-        if(currentDepth < closestDepth + Bias()){
-            noShadowCount += 1;
-        }
-    }
-
-    float shadow = float(noShadowCount) / float(NUM_SAMPLES);
-    return shadow;
-}
 
 float useShadowMap(sampler2D shadowMap, vec4 shadowCoord){
   float  bias = Bias();
@@ -183,7 +123,7 @@ void main(void) {
     vec3 shadowCoord = vPositionFromLight.xyz / vPositionFromLight.w;
     shadowCoord = shadowCoord * 0.5 + 0.5;
 
-    visibility = PCF(uShadowMap, vec4(shadowCoord, 1.0));
+    visibility = useShadowMap(uShadowMap, vec4(shadowCoord, 1.0));
     
     vec3 color = PBRcolor() * visibility + ambient;
     gl_FragColor = vec4(color, 1.0);

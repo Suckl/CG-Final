@@ -116,9 +116,11 @@ float unpack(vec4 rgbaDepth) {
     return  depth;
 }
 
+#define BIAS_SIZE 0.00233
+
 float Bias(){
-    vec3 uLightDir = normalize(uLightPos - vFragPos);
-    float bias = max(0.05 * (1.0 - dot(vNormal, uLightDir)), 0.005);
+    vec3 uLightDir = normalize(uLightPos);
+    float bias = max(BIAS_SIZE * (1.0 - dot(vNormal, uLightDir)), BIAS_SIZE);
     return  bias;
 }
 

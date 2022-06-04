@@ -32,9 +32,16 @@ Scene::Scene(const Options& options): Application(options) {
 
 	// init light
 	_directionlight.reset(new DirectionalLight());
-	// LightList[0]->rotation = glm::angleAxis(glm::radians(45.0f), -glm::vec3(1.0f, 1.0f, 1.0f));
-    // LightList[0]->position = glm::vec3(3.0f,0.0f,0.0f);
     _directionlight->position =glm::vec3(0.5f, 4.0f, 2.0f);
+
+    const std::string lightCubePath = "../media/sphere.obj";
+    _lightlist.ModelList.push_back(nullptr);
+    _lightlist.ModelList[0].reset(new Model(lightCubePath));
+    _lightlist.filepath.push_back(lightCubePath);
+    _lightlist.visible.push_back(true);
+    _lightlist.Color.push_back(glm::vec3(1.0));
+    _lightlist.ModelList[0]->position = _directionlight->position;
+    _lightlist.ModelList[0]->scale = glm::vec3(0.3f);
 
 	// init skybox
 	_skybox.reset(new SkyBox(skyboxTexturePaths));
@@ -70,6 +77,29 @@ Scene::Scene(const Options& options): Application(options) {
     glDrawBuffer(GL_NONE);
     glReadBuffer(GL_NONE);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    // DEPTH MAP FOR DOT LIGHT
+    glGenFramebuffers(1, &pointDepthMapFBO);
+
+    // Create depth cubemap texture
+    glGenTextures(1, &depthCubemap);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, depthCubemap);
+    for (GLuint i = 0; i < 6; ++i)
+        glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_DEPTH_COMPONENT, _shadowWidth, _shadowHeight, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+
+    // Attach cubemap as depth map FBO's color buffer
+    glBindFramebuffer(GL_FRAMEBUFFER, pointDepthMapFBO);
+    glFramebufferTexture(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, depthCubemap, 0);
+    glDrawBuffer(GL_NONE);
+    glReadBuffer(GL_NONE);
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        std::cout << "Framebuffer not complete!" << std::endl;
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
 Scene::~Scene() {
@@ -83,25 +113,41 @@ void Scene::initShader(){
 	_pbrShader->attachVertexShaderFromFile("../../src/shaders/PBRvs.glsl");
 	_pbrShader->attachFragmentShaderFromFile("../../src/shaders/PBRfs.glsl");
 	_pbrShader->link();
+
     _shadowShader.reset(new GLSLProgram);
-    _shadowShader->attachVertexShaderFromFile("../../src/shaders/Shadowvs.glsl");
-    _shadowShader->attachFragmentShaderFromFile("../../src/shaders/Shadowfs.glsl");
+    _shadowShader->attachVertexShaderFromFile("../../src/shaders/ShadowShader/Shadowvs.glsl");
+    _shadowShader->attachFragmentShaderFromFile("../../src/shaders/ShadowShader/Shadowfs.glsl");
     _shadowShader->link();
+
     _shadowMappingShader.reset(new GLSLProgram);
-    _shadowMappingShader->attachVertexShaderFromFile("../../src/shaders/ShadowMappingvs.glsl");
-    _shadowMappingShader->attachFragmentShaderFromFile("../../src/shaders/ShadowMappingfs.glsl");
+    _shadowMappingShader->attachVertexShaderFromFile("../../src/shaders/ShadowShader/ShadowMappingvs.glsl");
+    _shadowMappingShader->attachFragmentShaderFromFile("../../src/shaders/ShadowShader/ShadowMappingfs.glsl");
     _shadowMappingShader->link();
+
     _pcfShader.reset(new GLSLProgram);
-    _pcfShader->attachVertexShaderFromFile("../../src/shaders/ShadowMappingvs.glsl");
-    _pcfShader->attachFragmentShaderFromFile("../../src/shaders/PCFfs.glsl");
+    _pcfShader->attachVertexShaderFromFile("../../src/shaders/ShadowShader/ShadowMappingvs.glsl");
+    _pcfShader->attachFragmentShaderFromFile("../../src/shaders/ShadowShader/PCFfs.glsl");
     _pcfShader->link();
+
     _pcssShader.reset(new GLSLProgram);
-    _pcssShader->attachVertexShaderFromFile("../../src/shaders/ShadowMappingvs.glsl");
-    _pcssShader->attachFragmentShaderFromFile("../../src/shaders/PCSSfs.glsl");
+    _pcssShader->attachVertexShaderFromFile("../../src/shaders/ShadowShader/ShadowMappingvs.glsl");
+    _pcssShader->attachFragmentShaderFromFile("../../src/shaders/ShadowShader/PCSSfs.glsl");
     _pcssShader->link();
+
+    _pointShadowShader.reset(new GLSLProgram);
+    _pointShadowShader->attachVertexShaderFromFile("../../src/shaders/ShadowShader/PointShadowsvs.glsl");
+    _pointShadowShader->attachGeometryShaderFromFile("../../src/shaders/ShadowShader/PointShadowsgs.glsl");
+    _pointShadowShader->attachFragmentShaderFromFile("../../src/shaders/ShadowShader/PointShadowsfs.glsl");
+    _pointShadowShader->link();
+
+    _omnidirectionalShader.reset(new GLSLProgram);
+    _omnidirectionalShader->attachVertexShaderFromFile("../../src/shaders/ShadowShader/OmnidirectionalShadowvs.glsl");
+    _omnidirectionalShader->attachFragmentShaderFromFile("../../src/shaders/ShadowShader/OmnidirectionalShadowfs.glsl");
+    _omnidirectionalShader->link();
+
     _lightCubeShader.reset(new GLSLProgram);
-    _lightCubeShader->attachVertexShaderFromFile("../../src/shaders/LightCubevs.glsl");
-    _lightCubeShader->attachFragmentShaderFromFile("../../src/shaders/LightCubefs.glsl");
+    _lightCubeShader->attachVertexShaderFromFile("../../src/shaders/ShadowShader/LightCubevs.glsl");
+    _lightCubeShader->attachFragmentShaderFromFile("../../src/shaders/ShadowShader/LightCubefs.glsl");
     _lightCubeShader->link();
 }
 
@@ -190,12 +236,12 @@ void Scene::renderFrame() {
 	glEnable(GL_DEPTH_TEST);
 	const glm::mat4 projection = _camera->getProjectionMatrix();
 	const glm::mat4 view = _camera->getViewMatrix();
-
  
 	// draw scene
 	drawList();
-
     
+    drawLight();
+
     // draw skybox
 	_skybox->draw(projection, view);
     
@@ -244,39 +290,12 @@ bool Scene::addTexture(const std::string filename,const std::string name){
     return true;
 }
 
-void Scene::debugShadowMap(float near_plane, float far_plane) {
+void Scene::drawLight() {
     _lightCubeShader->use();
-    _lightCubeShader->setFloat("near_plane", near_plane);
-    _lightCubeShader->setFloat("far_plane", far_plane);
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, depthMap);
-
-    unsigned int quadVAO = 0;
-    unsigned int quadVBO;
-
-    if (quadVAO == 0)
-    {
-        float quadVertices[] = {
-            // positions        // texture Coords
-            -1.0f,  1.0f, 0.0f, 0.0f, 1.0f,
-            -1.0f, -1.0f, 0.0f, 0.0f, 0.0f,
-            1.0f,  1.0f, 0.0f, 1.0f, 1.0f,
-            1.0f, -1.0f, 0.0f, 1.0f, 0.0f,
-        };
-        // setup plane VAO
-        glGenVertexArrays(1, &quadVAO);
-        glGenBuffers(1, &quadVBO);
-        glBindVertexArray(quadVAO);
-        glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
-        glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), &quadVertices, GL_STATIC_DRAW);
-        glEnableVertexAttribArray(0);
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
-        glEnableVertexAttribArray(1);
-        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
-    }
-    glBindVertexArray(quadVAO);
-    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-    glBindVertexArray(0);
+    _lightCubeShader->setMat4("projection", _camera->getProjectionMatrix());
+    _lightCubeShader->setMat4("view", _camera->getViewMatrix());
+    _lightCubeShader->setMat4("model", _lightlist.ModelList[0]->getModelMatrix());
+    _lightlist.ModelList[0]->draw();
 }
 
 void Scene::drawList(){
@@ -321,9 +340,7 @@ void Scene::drawList(){
             glm::mat4 lightProjection, lightView, lightMatrix;
             float size = 50.0f;
             
-            lightProjection = glm::ortho(-size, size, -size, size, 0.1f, 100.0f);
-            // lightProjection =glm::perspective(glm::radians(45.0f), 1.0f,0.1f, 100.0f);
-            // lightView = glm::lookAt(lightPos, lightPos + LightList[0]->getFront(), LightList[0]->getUp());
+            lightProjection = glm::ortho(-size, size, -size, size, near_plane, far_plane);
             lightView = glm::lookAt(lightPos, glm::vec3(0.0f), glm::vec3(0.0, 1.0, 0.0));;
             lightMatrix = lightProjection * lightView;
 
@@ -349,14 +366,12 @@ void Scene::drawList(){
             glViewport(0, 0, _windowWidth, _windowHeight);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-            // debugShadowMap(LightList[0]->near_plane, LightList[0]->far_plane);
-
             // camera pass
             for(int i = 0; i < _objectlist.ModelList.size(); i++){
                 if(!_objectlist.visible[i]) continue;           
                 _shadowMappingShader->use();
                 if(!_objectlist.visible[i]) continue;
-                if(series_flag&&i<_serise.sequence.size()&&_serise.max>-1&&_serise.sequence[i]!=-1){
+                if(series_flag && i<_serise.sequence.size() && _serise.max > -1 && _serise.sequence[i] != -1){
                     if (_serise.sequence[i]!=count/20) continue;
                 }
 
@@ -401,9 +416,7 @@ void Scene::drawList(){
             glm::mat4 lightProjection, lightView, lightMatrix;
             float size = 50.0f;
             
-            lightProjection = glm::ortho(-size, size, -size, size, 0.1f, 100.0f);
-            // lightProjection =glm::perspective(glm::radians(90.0f), 1.0f,0.1f, 100.0f);
-            // lightView = glm::lookAt(lightPos, lightPos + LightList[0]->getFront(), LightList[0]->getUp());
+            lightProjection = glm::ortho(-size, size, -size, size, near_plane, far_plane);
             lightView = glm::lookAt(lightPos, glm::vec3(0.0f), glm::vec3(0.0, 1.0, 0.0));
             lightMatrix = lightProjection * lightView;
 
@@ -416,7 +429,7 @@ void Scene::drawList(){
             _shadowShader->setMat4("uLightSpaceMatrix", lightMatrix);           
             for(int i = 0; i < _objectlist.ModelList.size(); i++){
                 if(!_objectlist.visible[i]) continue;
-                if(series_flag&&i<_serise.sequence.size()&&_serise.max>-1&&_serise.sequence[i]!=-1){
+                if(series_flag && i<_serise.sequence.size() && _serise.max>-1 && _serise.sequence[i]!=-1){
                     if (_serise.sequence[i]!=count/20) continue;
                 }                
 
@@ -478,8 +491,7 @@ void Scene::drawList(){
             glm::mat4 lightProjection, lightView, lightMatrix;
             float size = 50.0f;
             
-            lightProjection = glm::ortho(-size, size, -size, size, 0.1f, 100.0f);
-            //lightView = glm::lookAt(lightPos, lightPos + LightList[0]->getFront(), LightList[0]->getUp());
+            lightProjection = glm::ortho(-size, size, -size, size, near_plane, far_plane);
             lightView = glm::lookAt(lightPos, glm::vec3(0.0f), glm::vec3(0.0, 1.0, 0.0));
             lightMatrix = lightProjection * lightView;
 
@@ -546,6 +558,88 @@ void Scene::drawList(){
             }
         }
         break;
+        
+        case ShadowRenderMode::PointLightShadow: {
+            glm::vec3 lightPos = _directionlight->position;
+            GLfloat aspect = (GLfloat)_shadowWidth / (GLfloat)_shadowHeight;
+            glm::mat4 shadowProj = glm::perspective(90.0f, aspect, near_plane, far_plane);
+            std::vector<glm::mat4> shadowTransforms;
+            shadowTransforms.push_back(shadowProj * glm::lookAt(lightPos, lightPos + glm::vec3( 1.0,  0.0,  0.0), glm::vec3(0.0, -1.0,  0.0)));
+            shadowTransforms.push_back(shadowProj * glm::lookAt(lightPos, lightPos + glm::vec3(-1.0,  0.0,  0.0), glm::vec3(0.0, -1.0,  0.0)));
+            shadowTransforms.push_back(shadowProj * glm::lookAt(lightPos, lightPos + glm::vec3( 0.0,  1.0,  0.0), glm::vec3(0.0,  0.0,  1.0)));
+            shadowTransforms.push_back(shadowProj * glm::lookAt(lightPos, lightPos + glm::vec3( 0.0, -1.0,  0.0), glm::vec3(0.0,  0.0, -1.0)));
+            shadowTransforms.push_back(shadowProj * glm::lookAt(lightPos, lightPos + glm::vec3( 0.0,  0.0,  1.0), glm::vec3(0.0, -1.0,  0.0)));
+            shadowTransforms.push_back(shadowProj * glm::lookAt(lightPos, lightPos + glm::vec3( 0.0,  0.0, -1.0), glm::vec3(0.0, -1.0,  0.0)));
+        
+            // light pass
+            _pointShadowShader->use();
+            glViewport(0, 0, _shadowWidth, _shadowHeight);
+            glBindFramebuffer(GL_FRAMEBUFFER, pointDepthMapFBO);
+                glClear(GL_DEPTH_BUFFER_BIT);
+
+            for (GLuint i = 0; i < 6; ++i){
+                _pointShadowShader->setMat4("shadowMatrices[" + std::to_string(i) + "]", shadowTransforms[i]);
+            }
+            _pointShadowShader->setFloat("far_plane", far_plane);
+            _pointShadowShader->setVec3("uLightPos", _directionlight->position);
+            for(int i = 0; i < _objectlist.ModelList.size(); i++){
+                if(!_objectlist.visible[i]) continue;
+                if(series_flag && i<_serise.sequence.size() && _serise.max > -1 && _serise.sequence[i] != -1){
+                    if (_serise.sequence[i] != count/20) continue;
+                }                
+
+                _shadowShader->setMat4("model", _objectlist.ModelList[i]->getModelMatrix());
+                _objectlist.ModelList[i]->draw();
+            }
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            
+            // reset viewport
+            glViewport(0, 0, _windowWidth, _windowHeight);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+            // camera pass
+            for(int i = 0; i < _objectlist.ModelList.size(); i++){
+                if(!_objectlist.visible[i]) continue;           
+                if(series_flag && i<_serise.sequence.size() && _serise.max > -1 && _serise.sequence[i] != -1){
+                    if (_serise.sequence[i]!=count/20) continue;
+                }
+                _omnidirectionalShader->use();
+
+                _omnidirectionalShader->setInt("uShadowMap", 0);
+                _omnidirectionalShader->setInt("uAlbedoMap", 1);
+                glActiveTexture(GL_TEXTURE0);
+                glBindTexture(GL_TEXTURE_CUBE_MAP, depthCubemap);
+
+                glm::mat4 projection = _camera->getProjectionMatrix();
+                glm::mat4 view = _camera->getViewMatrix();
+
+                _omnidirectionalShader->setMat4("projection", projection);
+                _omnidirectionalShader->setMat4("view", view);
+                _omnidirectionalShader->setMat4("model", _objectlist.ModelList[i]->getModelMatrix());
+
+                _omnidirectionalShader->setVec3("uCameraPos", _camera->position);
+                _omnidirectionalShader->setVec3("uLightPos", _directionlight->position);
+                _omnidirectionalShader->setVec3("uLightRadiance", _directionlight->radiance);
+                _omnidirectionalShader->setFloat("ka", _directionlight->ka);
+
+                _omnidirectionalShader->setFloat("uRoughness", _objectlist.roughness[i]);
+                _omnidirectionalShader->setFloat("uMetallic", _objectlist.metallic[i]);
+
+                _omnidirectionalShader->setFloat("far_plane", far_plane);
+
+                if(_objectlist.color_flag[i]) _pcfShader->setVec3("uColor", _objectlist.Color[i]);
+                else _pcfShader->setVec3("uColor", glm::vec3(1.0f));
+                if(!_objectlist.color_flag[i] && _texturelist.texture[_objectlist.TextureIndex[i]] != nullptr){
+                    glActiveTexture(GL_TEXTURE1);
+                    _texturelist.texture[_objectlist.TextureIndex[i]]->bind();
+                    _objectlist.ModelList[i]->draw();
+                    _texturelist.texture[_objectlist.TextureIndex[i]]->unbind();
+                }
+                else _objectlist.ModelList[i]->draw();
+            }
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D,0);
+        }
     }
 }
 
@@ -580,22 +674,27 @@ void Scene::drawGUI()  {
         ImGui::SameLine();
         ImGui::Text("Click this to view more details");
 		ImGui::Separator();
+
         ImGui::Text("Check to open other windows");
         ImGui::Checkbox("File Control Window",&file_flags);
         ImGui::Checkbox("Object Control Window",&object_flags);
         ImGui::Checkbox("NURBS Control Window",&NURBS_flags);
         ImGui::Separator();
+
         ImGui::Text("Choose ShadowRenderMode");
-        ImGui::RadioButton("None",(int *)&_ShadowRenderMode,(int)ShadowRenderMode::None);ImGui::SameLine();
-        ImGui::RadioButton("ShadowMapping",(int *)&_ShadowRenderMode,(int)ShadowRenderMode::ShadowMapping);ImGui::SameLine();
-        ImGui::RadioButton("PCF",(int *)&_ShadowRenderMode,(int)ShadowRenderMode::PCF);ImGui::SameLine();
-        ImGui::RadioButton("PCSS",(int *)&_ShadowRenderMode,(int)ShadowRenderMode::PCSS);
+        ImGui::RadioButton("None", (int *)&_ShadowRenderMode, (int)ShadowRenderMode::None); ImGui::SameLine();
+        ImGui::RadioButton("ShadowMapping", (int *)&_ShadowRenderMode, (int)ShadowRenderMode::ShadowMapping); ImGui::SameLine();
+        ImGui::RadioButton("PCF", (int *)&_ShadowRenderMode, (int)ShadowRenderMode::PCF); ImGui::SameLine();
+        ImGui::RadioButton("PCSS", (int *)&_ShadowRenderMode, (int)ShadowRenderMode::PCSS); 
+        ImGui::RadioButton("PointLight", (int *)&_ShadowRenderMode, (int)ShadowRenderMode::PointLightShadow);
         ImGui::Separator();
+
         ImGui::Text("Game Options");
         ImGui::Checkbox("Collision detect",&collision_flag);
         ImGui::RadioButton("FPS-style camera",(int *)&_CameraMode,(int)CameraMode::FPS);ImGui::SameLine();
         ImGui::RadioButton("Free camera",(int *)&_CameraMode,(int)CameraMode::Free);
         ImGui::Separator();
+
         ImGui::Text("Choose ScreenShotMode");ImGui::SameLine();
         ImGui::RadioButton("Normal",(int *)&_ScreenShotMode,(int)ScreenShotMode::Normal);ImGui::SameLine();
         ImGui::RadioButton("RayTracing",(int *)&_ScreenShotMode,(int)ScreenShotMode::RayTracing);
@@ -603,6 +702,7 @@ void Scene::drawGUI()  {
             //TODO::把接口塞进去
         }
         ImGui::Separator();
+
         ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
         ImGui::Checkbox("wireframe", &wireframe);
         ImGui::Checkbox("Draw series", &series_flag);
@@ -746,57 +846,63 @@ void Scene::drawGUIobj(bool &flag){
             if(ImGui::TreeNode((void*)(intptr_t)i,"object %s",_objectlist.objectname[i].c_str())){
                 ImVec4 color = ImVec4(_objectlist.Color[i].x, _objectlist.Color[i].y, _objectlist.Color[i].z,1.0f);
                 const float rota_angle=0.05f;
-                float position[3]={_objectlist.ModelList[i]->position.x,_objectlist.ModelList[i]->position.y,_objectlist.ModelList[i]->position.z};
+                float position[3] = {_objectlist.ModelList[i]->position.x,_objectlist.ModelList[i]->position.y,_objectlist.ModelList[i]->position.z};
                 float scale[3] = {_objectlist.ModelList[i]->scale.x,_objectlist.ModelList[i]->scale.y,_objectlist.ModelList[i]->scale.z};
                 static char newname[128]="Type your new object name here";
-                bool color_flag=_objectlist.color_flag[i];
-                float roughness=_objectlist.roughness[i];
-                float metallic=_objectlist.metallic[i];
-                ImGui::Checkbox("Use color instead of texture",&color_flag);
-                _objectlist.color_flag[i]=color_flag;
-                ImGui::ColorEdit3("Object Color",(float*)&color);
-                _objectlist.Color[i]=glm::vec3(color.x,color.y,color.z);
-                ImGui::SliderFloat("Roughness",&roughness,0.0f,1.0f,"%.2f");
+                bool color_flag =_objectlist.color_flag[i];
+                float roughness =_objectlist.roughness[i];
+                float metallic = _objectlist.metallic[i];
+                ImGui::Checkbox("Use color instead of texture", &color_flag);
+                _objectlist.color_flag[i] = color_flag;
+                ImGui::ColorEdit3("Object Color", (float*)&color);
+                _objectlist.Color[i]=glm::vec3(color.x, color.y, color.z);
+                ImGui::SliderFloat("Roughness",&roughness, 0.0f, 1.0f, "%.2f");
                 _objectlist.roughness[i]=roughness;
-                ImGui::SliderFloat("Metallic",&metallic,0.0f,1.0f,"%.2f");
+                ImGui::SliderFloat("Metallic",&metallic, 0.0f, 1.0f, "%.2f");
                 _objectlist.metallic[i]=metallic;
-                ImGui::DragFloat3("Scale",scale,0.005f,0.0f,10.0f,"%.3f");ImGui::SameLine();
+                ImGui::DragFloat3("Scale", scale, 0.005f, 0.0f, 10.0f, "%.3f");ImGui::SameLine();
                 if(ImGui::Button("Proportional base scale.x")){
-                    scale[2]=scale[1]=scale[0];  
+                    scale[2] = scale[1] = scale[0];  
                 }
-                ImGui::DragFloat3("Position",position,0.005f,-100.0f,100.0f,"%.3f");
-                _objectlist.ModelList[i]->scale=glm::vec3{scale[0],scale[1],scale[2]};
-                _objectlist.ModelList[i]->position=glm::vec3{position[0],position[1],position[2]};
+                ImGui::DragFloat3("Position", position, 0.005f, -100.0f, 100.0f, "%.3f");
+                _objectlist.ModelList[i]->scale = glm::vec3{scale[0], scale[1], scale[2]};
+                _objectlist.ModelList[i]->position = glm::vec3{position[0], position[1], position[2]};
                 float spacing = ImGui::GetStyle().ItemInnerSpacing.x;
                 ImGui::PushButtonRepeat(true);
                 ImGui::Text("Hode to rotate:   ");ImGui::SameLine();
                 ImGui::Text("rotation-x");ImGui::SameLine();
                 if (ImGui::ArrowButton("##left", ImGuiDir_Left)) {
-                    _objectlist.ModelList[i]->rotation =glm::normalize(glm::quat{ cos(rota_angle / 2),0.0,1.0*sin(rota_angle / 2),0.0 }*_objectlist.ModelList[i]->rotation);
+                    _objectlist.ModelList[i]->rotation =glm::normalize(
+                        glm::quat{ cos(rota_angle / 2), 0.0, 1.0 * sin(rota_angle / 2),0.0 } * _objectlist.ModelList[i]->rotation);
                 }
                 ImGui::SameLine(0.0f, spacing);
                 if (ImGui::ArrowButton("##right", ImGuiDir_Right)) {
-                    _objectlist.ModelList[i]->rotation =glm::normalize(glm::quat{ cos(rota_angle / 2),0.0,-1.0*sin(rota_angle / 2),0.0 }*_objectlist.ModelList[i]->rotation);
+                    _objectlist.ModelList[i]->rotation =glm::normalize(
+                        glm::quat{ cos(rota_angle / 2), 0.0, -1.0 * sin(rota_angle / 2),0.0 }  *_objectlist.ModelList[i]->rotation);
                 }
                 ImGui::SameLine();ImGui::Text("rotation-y");ImGui::SameLine();
                 if (ImGui::ArrowButton("##left", ImGuiDir_Left)) {
-                    _objectlist.ModelList[i]->rotation =glm::normalize(glm::quat{ cos(rota_angle / 2),1.0*sin(rota_angle / 2),0.0,0.0 }*_objectlist.ModelList[i]->rotation);
+                    _objectlist.ModelList[i]->rotation =glm::normalize(
+                        glm::quat{ cos(rota_angle / 2),1.0*sin(rota_angle / 2), 0.0, 0.0 } * _objectlist.ModelList[i]->rotation);
                 }
                 ImGui::SameLine(0.0f, spacing);
                 if (ImGui::ArrowButton("##right", ImGuiDir_Right)) {
-                    _objectlist.ModelList[i]->rotation =glm::normalize(glm::quat{ cos(rota_angle / 2),-1.0*sin(rota_angle / 2),0.0,0.0 }*_objectlist.ModelList[i]->rotation);
+                    _objectlist.ModelList[i]->rotation =glm::normalize(
+                        glm::quat{ cos(rota_angle / 2), -1.0 * sin(rota_angle / 2), 0.0, 0.0 } * _objectlist.ModelList[i]->rotation);
                 }
                 ImGui::SameLine();ImGui::Text("rotation-z");ImGui::SameLine();
                 if (ImGui::ArrowButton("##left", ImGuiDir_Left)) {
-                    _objectlist.ModelList[i]->rotation =glm::normalize(glm::quat{ cos(rota_angle / 2),0.0,0.0,1.0*sin(rota_angle / 2) }*_objectlist.ModelList[i]->rotation);
+                    _objectlist.ModelList[i]->rotation =glm::normalize(
+                        glm::quat{ cos(rota_angle / 2), 0.0, 0.0, 1.0 * sin(rota_angle / 2) } * _objectlist.ModelList[i]->rotation);
                 }
                 ImGui::SameLine(0.0f, spacing);
                 if (ImGui::ArrowButton("##right", ImGuiDir_Right)) {
-                    _objectlist.ModelList[i]->rotation =glm::normalize(glm::quat{ cos(rota_angle / 2),0.0,0.0,-1.0*sin(rota_angle / 2) }*_objectlist.ModelList[i]->rotation);
+                    _objectlist.ModelList[i]->rotation =glm::normalize(
+                        glm::quat{ cos(rota_angle / 2), 0.0, 0.0, -1.0 * sin(rota_angle / 2) } * _objectlist.ModelList[i]->rotation);
                 }
                 ImGui::PopButtonRepeat();
-                if(!_objectlist.visible[i]&&ImGui::Button("Click me to display this object")) _objectlist.visible[i]=true;
-                else if(_objectlist.visible[i]&&ImGui::Button("Click me to hide this object")) _objectlist.visible[i]=false;
+                if(!_objectlist.visible[i] && ImGui::Button("Click me to display this object")) _objectlist.visible[i] = true;
+                else if(_objectlist.visible[i] && ImGui::Button("Click me to hide this object")) _objectlist.visible[i] = false;
                 int texture_current_idx = _objectlist.TextureIndex[i]; // Here we store our selection data as an index.
                 ImGui::Text("Click to choose texture for object");
                 if (ImGui::BeginListBox("TextureList"))
@@ -816,14 +922,14 @@ void Scene::drawGUIobj(bool &flag){
                 if(ImGui::Button("Export this orginal model to filename.obj")) 
                     exportOBJ(_objectlist.ModelList[i]->_vertices,_objectlist.ModelList[i]->_indices,_objectlist.objectname[i]);
                 if(ImGui::Button("Export transformed model to filename.obj")) 
-                    exportTransOBJ(_objectlist.ModelList[i]->_vertices,_objectlist.ModelList[i]->_indices,_objectlist.objectname[i],_objectlist.ModelList[i]->getModelMatrix());
-                if(_objectlist.ModelList.size()>1&&ImGui::Button("Delete this object")) deleteModel(i);
-                ImGui::InputText("Change object name", newname, IM_ARRAYSIZE(newname));ImGui::SameLine();
+                    exportTransOBJ(_objectlist.ModelList[i]->_vertices,_objectlist.ModelList[i]->_indices,_objectlist.objectname[i], _objectlist.ModelList[i]->getModelMatrix());
+                if(_objectlist.ModelList.size() > 1 && ImGui::Button("Delete this object")) deleteModel(i);
+                ImGui::InputText("Change object name", newname, IM_ARRAYSIZE(newname)); ImGui::SameLine();
                 if(ImGui::Button("Enter name")){
-                    std::string name=newname;
-                    _objectlist.objectname[i]=name;
-                    name="Change Success!";
-                    name=" ";
+                    std::string name = newname;
+                    _objectlist.objectname[i] = name;
+                    name = "Change Success!";
+                    name = " ";
                     strcpy(newname,name.c_str());
                 }
                 ImGui::TreePop();
@@ -833,25 +939,28 @@ void Scene::drawGUIobj(bool &flag){
     if(ImGui::CollapsingHeader("Draw Series")){
         if(ImGui::Button("Init Series")){
             _serise.sequence.clear();
-            for (int i = 0; i < _objectlist.ModelList.size(); i++){
+            for (int i = 0; i < _objectlist.ModelList.size(); ++i){
                 _serise.sequence.push_back(-1);
             }
         }
-        _serise.max=-1;
-        for(int i=0;i<_serise.sequence.size();i++){
-            ImGui::SliderInt(_objectlist.objectname[i].c_str(),&_serise.sequence[i],-1,20);
-            if(_serise.sequence[i]>_serise.max) _serise.max=_serise.sequence[i];
+        _serise.max = -1;
+        for(int i = 0; i<_serise.sequence.size(); ++i){
+            ImGui::SliderInt(_objectlist.objectname[i].c_str(), &_serise.sequence[i],-1,20);
+            if(_serise.sequence[i] > _serise.max) _serise.max=_serise.sequence[i];
         }
     }
     if(ImGui::CollapsingHeader("Light Status")){
         ImVec4 color = ImVec4(_directionlight->color.x, _directionlight->color.y, _directionlight->color.z,1.0f);
-        static float position[3]={_directionlight->position.x,_directionlight->position.y,_directionlight->position.z};
+        static float position[3] = {_directionlight->position.x,_directionlight->position.y,_directionlight->position.z};
+
         ImGui::DragFloat3("light position",position,0.05f,-10.0f,10.0f,"%.3f");
-        _directionlight->position=glm::vec3(position[0],position[1],position[2]);
-        ImGui::DragFloat("Light Intensity",&_directionlight->intensity,0.05f,0.1f,10.0f,"%.3f");
+        _directionlight->position = glm::vec3(position[0],position[1],position[2]);
+        _lightlist.ModelList[0]->position = glm::vec3(position[0],position[1],position[2]);
+
+        ImGui::DragFloat("Light Intensity",&_directionlight->intensity, 0.05f, 0.1f, 10.0f, "%.3f");
         ImGui::ColorEdit3("Light Color",(float*)&color);
-        _directionlight->color=glm::vec3(color.x,color.y,color.z);
-        _directionlight->radiance=_directionlight->intensity*_directionlight->color;
+        _directionlight->color = glm::vec3(color.x, color.y, color.z);
+        _directionlight->radiance = _directionlight->intensity * _directionlight->color;
     }
     
     ImGui::End();
