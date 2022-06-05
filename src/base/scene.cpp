@@ -41,6 +41,7 @@ Scene::Scene(const Options& options): Application(options) {
     // init Series
     _serise.max=0;
 
+
 	// init shaders
     initShader();
 
@@ -65,8 +66,12 @@ Scene::Scene(const Options& options): Application(options) {
     _positiontexture.reset(new DataTexture(GL_RGBA, _windowWidth, _windowHeight, GL_RGBA, GL_FLOAT));
     _diffusetexuture.reset(new DataTexture(GL_RGBA, _windowWidth, _windowHeight, GL_RGBA, GL_FLOAT));
     _depthtexture.reset(new DataTexture(GL_RGBA, _windowWidth, _windowHeight, GL_RGBA, GL_FLOAT));
+    _depthgbuffer.reset(new DataTexture(GL_DEPTH_COMPONENT, _windowWidth, _windowHeight, GL_DEPTH_COMPONENT, GL_FLOAT));
     _gbufferfbo->bind();
+    const GLenum bufs[5]={GL_COLOR_ATTACHMENT0,GL_COLOR_ATTACHMENT1,GL_COLOR_ATTACHMENT2,GL_COLOR_ATTACHMENT3,GL_COLOR_ATTACHMENT4};
+    glDrawBuffers(5,bufs);
     _gbufferfbo->attach(*_diffusetexuture,GL_COLOR_ATTACHMENT0);
+    _gbufferfbo->attach(*_depthgbuffer,GL_DEPTH_ATTACHMENT);
     _gbufferfbo->attach(*_depthtexture,GL_COLOR_ATTACHMENT1);
     _gbufferfbo->attach(*_normaltexture,GL_COLOR_ATTACHMENT2);
     _gbufferfbo->attach(*_visibilitytexture,GL_COLOR_ATTACHMENT3);
@@ -594,6 +599,7 @@ void Scene::drawList(){
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
             // pass2
             _gbufferfbo->bind();
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
             _gbufferShader->use();
             const glm::mat4 projection = _camera->getProjectionMatrix();
             const glm::mat4 view = _camera->getViewMatrix();
@@ -623,17 +629,17 @@ void Scene::drawList(){
             _ssrShader->setVec3("uLightDir", _directionlight->position);
             _ssrShader->setVec3("uCameraPos", _camera->position);
             _ssrShader->setVec3("uLightRadiance", _directionlight->radiance);
+            glActiveTexture(GL_TEXTURE0);_diffusetexuture->bind();
+            glActiveTexture(GL_TEXTURE1);_depthtexture->bind();
+            glActiveTexture(GL_TEXTURE2);_normaltexture->bind();
+            glActiveTexture(GL_TEXTURE3);_visibilitytexture->bind();
+            // glActiveTexture(GL_TEXTURE4);_positiontexture->bind();
             _ssrShader->setInt("uGDiffuse",0);
             _ssrShader->setInt("uGDepth",1);
             _ssrShader->setInt("uGNormalWorld",2);
             _ssrShader->setInt("uGShadow",3);
-            // _ssrShader->setInt("uGPosWorld",4);
+            // // _ssrShader->setInt("uGPosWorld",4);
             _ssrShader->setInt("uAlbedoMap",4);
-            glEnable(GL_TEXTURE0);_diffusetexuture->bind();
-            glEnable(GL_TEXTURE1);_depthtexture->bind();
-            glEnable(GL_TEXTURE2);_normaltexture->bind();
-            glEnable(GL_TEXTURE3);_visibilitytexture->bind();
-            // glEnable(GL_TEXTURE4);_positiontexture->bind();
             for(int i = 0; i < _objectlist.ModelList.size(); i++){
                 if(!_objectlist.visible[i]) continue;
                 if(series_flag && i<_serise.sequence.size() && _serise.max>-1 && _serise.sequence[i] != -1){
@@ -650,11 +656,11 @@ void Scene::drawList(){
                 }
                 else _objectlist.ModelList[i]->draw();
             }
-            glEnable(GL_TEXTURE0);_diffusetexuture->unbind();
-            glEnable(GL_TEXTURE1);_depthtexture->unbind();
-            glEnable(GL_TEXTURE2);_normaltexture->unbind();
-            glEnable(GL_TEXTURE3);_visibilitytexture->unbind();
-            // glEnable(GL_TEXTURE4);_positiontexture->unbind();
+            glActiveTexture(GL_TEXTURE0);_diffusetexuture->unbind();
+            glActiveTexture(GL_TEXTURE1);_depthtexture->unbind();
+            glActiveTexture(GL_TEXTURE2);_normaltexture->unbind();
+            glActiveTexture(GL_TEXTURE3);_visibilitytexture->unbind();
+            glActiveTexture(GL_TEXTURE4);_positiontexture->unbind();
         }
         break;
     }

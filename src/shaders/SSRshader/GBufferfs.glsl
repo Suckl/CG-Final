@@ -11,6 +11,7 @@ in mat4 vWorldToLight;
 in vec2 vTextureCoord;
 in vec4 vPosWorld;
 in vec3 vNormalWorld;
+in vec4 vPositionFromLight;
 in float vDepth;
 #define EPS 1e-3
 #define PI 3.141592653589793
@@ -112,14 +113,16 @@ float PCF(sampler2D shadowMap, vec4 coords) {
 // }
 
 void main(void) {
+  vec3 shadowCoord = vPositionFromLight.xyz / vPositionFromLight.w;
+  shadowCoord = shadowCoord * 0.5 + 0.5;
   //diffuse 
   gl_FragData[0] = vec4(roughness,metallic,1.0, 1.0);
   //depth
   gl_FragData[1] = vec4(vec3(vDepth), 1.0);
   //normal
-  gl_FragData[2] = vec4(vNormalWorld, 1.0);
+  gl_FragData[2] = vec4(vNormalWorld*0.5+vec3(0.5), 1.0);
   //visible
-  gl_FragData[3] = vec4(vec3(PCF(uShadowMap,vPosWorld)), 1.0);
+  gl_FragData[3] = vec4(vec3(PCF(uShadowMap,vec4(shadowCoord,1.0))), 1.0);
   //position
   gl_FragData[4] = vec4(vec3(vPosWorld.xyz), 1.0);
 }

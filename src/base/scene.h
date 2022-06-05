@@ -53,7 +53,7 @@ private:
     // 物体清单，分别录入了模型纹理以及对应的Shader
     ObjectList _objectlist;
     TextureList _texturelist;
-    
+
     std::unique_ptr<DirectionalLight> _directionlight;
     std::unique_ptr<PerspectiveCamera> _camera;
     std::unique_ptr<SkyBox> _skybox;
@@ -73,6 +73,7 @@ private:
     std::unique_ptr<Framebuffer> _gbufferfbo;
 
     std::unique_ptr<DataTexture> _depthmap;
+    std::unique_ptr<DataTexture> _depthgbuffer;
     std::unique_ptr<DataTexture> _normaltexture;
     std::unique_ptr<DataTexture> _visibilitytexture;
     std::unique_ptr<DataTexture> _positiontexture;

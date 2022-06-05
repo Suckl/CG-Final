@@ -186,5 +186,6 @@ void main(void) {
     visibility = PCF(uShadowMap, vec4(shadowCoord, 1.0));
     
     vec3 color = PBRcolor() * visibility + ambient;
+    // vec3 color = PBRcolor() * visibility;
     gl_FragColor = vec4(color, 1.0);
 }

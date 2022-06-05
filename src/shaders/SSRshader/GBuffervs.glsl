@@ -14,14 +14,17 @@ out vec2 vTextureCoord;
 out vec3 vNormalWorld;
 out vec4 vPosWorld;
 out float vDepth;
+out vec4 vPositionFromLight;
 
 void main(void) {
+  vec3 vFragPos = (uModelMatrix * vec4(aPosition, 1.0)).xyz;
   vec4 posWorld = uModelMatrix * vec4(aPosition, 1.0);
   vPosWorld = posWorld.xyzw / posWorld.w;
   vec4 normalWorld = uModelMatrix * vec4(aNormal, 0.0);
   vNormalWorld = normalize(normalWorld.xyz);
   vTextureCoord = aTexCoord;
   vWorldToLight = uLightVP;
+  vPositionFromLight = uLightVP * vec4(vFragPos, 1.0);
 
   gl_Position = uProjectionMatrix * uViewMatrix * uModelMatrix * vec4(aPosition, 1.0);
   vDepth = gl_Position.w;

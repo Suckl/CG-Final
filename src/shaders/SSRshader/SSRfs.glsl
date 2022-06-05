@@ -12,6 +12,8 @@ uniform vec3 uColor;
 
 in mat4 vWorldToScreen;
 in highp vec4 vPosWorld;
+in vec2 vTextureCoord;
+in vec3 vNormal;
 
 #define PI 3.1415926535897932384626433832795
 #define M_PI 3.1415926535897932384626433832795
@@ -46,15 +48,20 @@ vec3 fresnelSchlick(vec3 F0, vec3 V, vec3 H)
     return F0 + (1.0 - F0) * pow(1.0 - theta, 5.0);
 }
 
-vec3 PBRcolor(float uRoughness,float uMetallic,vec3 wi,vec3 wo,vec2 uv)
+vec3 PBRcolor(vec3 wi,vec3 wo,vec2 uv)
 {
-    // vec3 albedo = pow(texture2D(uAlbedoMap, uv).rgb, vec3(2.2));
-    // if(albedo==vec3(0.0)) albedo=uColor;
-    vec3 albedo=uColor;
-    vec3 N = normalize(texture2D(uGNormalWorld,uv).xyz);
+    vec3 Diffuse = texture2D(uGDiffuse,uv).xyz;
+    float uRoughness = Diffuse.x;
+    float uMetallic = Diffuse.y;
+    vec3 albedo = pow(texture2D(uAlbedoMap, vTextureCoord).rgb, vec3(2.2));
+    if(albedo==vec3(0.0)) albedo=uColor;
+    // vec3 albedo=uColor;
+    vec3 N = texture2D(uGNormalWorld,uv).xyz;
+    N=normalize((N-vec3(0.5))*2);
+    // vec3 N=normalize(vNormal);
+    // return N;
     vec3 V = normalize(wo);
     float NdotV = max(dot(N, V), 0.0);
-    if(texture2D(uGDiffuse,uv).z==0.0) return vec3(1.0);
     vec3 F0 = vec3(0.04); 
     F0 = mix(F0, albedo,uMetallic);
 
@@ -75,11 +82,10 @@ vec3 PBRcolor(float uRoughness,float uMetallic,vec3 wi,vec3 wo,vec2 uv)
     vec3 BRDF = numerator / denominator;
 
     Lo += BRDF * radiance * NdotL;
-    vec3 color = Lo + vec3(0.001) * texture2D(uAlbedoMap, uv).rgb;
+    vec3 color = Lo + vec3(0.001) * texture2D(uAlbedoMap, vTextureCoord).rgb;
     // vec3 color = Lo;
 
     color = color / (color + vec3(1.0));
-    color = pow(color, vec3(1.0/2.2)); 
     return color;
 }
 
@@ -100,6 +106,17 @@ float InitRand(vec2 uv) {
   return fract((p3.x + p3.y) * p3.z);
 }
 
+// uniform sample
+vec3 SampleHemisphereUniform(inout float s, out float pdf) {
+  vec2 uv = Rand2(s);
+  float z = uv.x;
+  float phi = uv.y * TWO_PI;
+  float sinTheta = sqrt(1.0 - z*z);
+  vec3 dir = vec3(sinTheta * cos(phi), sinTheta * sin(phi), z);
+  pdf = INV_TWO_PI;
+  return dir;
+}
+
 // cos importance sample
 vec3 SampleHemisphereCos(inout float s, out float pdf) {
   vec2 uv = Rand2(s);
@@ -110,6 +127,7 @@ vec3 SampleHemisphereCos(inout float s, out float pdf) {
   pdf = z * INV_PI;
   return dir;
 }
+
 
 void LocalBasis(vec3 n, out vec3 b1, out vec3 b2) {
   float sign_ = sign(n.z);
@@ -163,11 +181,6 @@ float GetGBufferuShadow(vec2 uv) {
   return visibility;
 }
 
-vec3 GetGBufferDiffuse(vec2 uv) {
-  vec3 diffuse = texture2D(uGDiffuse, uv).xyz;
-  diffuse = pow(diffuse, vec3(2.2));
-  return diffuse;
-}
 
 /*
  * Evaluate diffuse bsdf value.
@@ -176,26 +189,20 @@ vec3 GetGBufferDiffuse(vec2 uv) {
  * uv is in screen space, [0, 1] x [0, 1].
  *
  */
-vec3 EvalDiffuse(vec3 wi, vec3 wo, vec2 uv) {
-  vec3 Diffuse = GetGBufferDiffuse(uv);
-  vec3 L = PBRcolor(Diffuse.x,Diffuse.y,wi,wo,uv);
-  return L;
-}
 
 /*
  * Evaluate directional light with shadow map
  * uv is in screen space, [0, 1] x [0, 1].
  *
  */
-vec3 EvalDirectionalLight(vec2 uv) {
+float visibility(vec2 uv) {
   float Visi=GetGBufferuShadow(uv);
-  vec3 Le = vec3(0.0);
-  if(Visi>0.0) Le=Visi*uLightRadiance;
-  else Le=0.01*uLightRadiance;
-//   return Le;
-  return vec3(1.0);
+  float Le = 0.0;
+  if(Visi>0.0) Le=Visi;
+  else Le=0.01;
+  return Le;
+//   return vec3(1.0);
 }
-
 
 #define INIT_STEP 0.8
 #define MAX_STEPS 20
@@ -267,31 +274,36 @@ bool RayMarch(vec3 ori, vec3 dir, out vec3 hitPos) {
   return intersect;
 }
 
-#define SAMPLE_NUM 5
+#define SAMPLE_NUM 20
 
 void main() {
   float s = InitRand(gl_FragCoord.xy);
-
-  vec3 L = vec3(0.0);
-  vec3 CameraDir=-normalize(vPosWorld.xyz-uCameraPos);
   vec2 uv=GetScreenCoordinate(vPosWorld.xyz);
-  L=EvalDirectionalLight(uv)*EvalDiffuse(uLightDir,CameraDir,uv);
+  vec3 CameraDir=-normalize(vPosWorld.xyz-uCameraPos);
+  
+  vec3 L = vec3(0.0);
+  L = visibility(uv)*PBRcolor(uLightDir,CameraDir,uv);
   vec3 L_indirect = vec3(0.0);
   for(int i=0;i<SAMPLE_NUM;i++){
     float pdf=0.0;
     vec3 b1,b2;
-    vec3 dir=SampleHemisphereCos(s,pdf);
+    // vec3 dir=SampleHemisphereCos(s,pdf);
+    vec3 dir=SampleHemisphereUniform(s,pdf);
     LocalBasis(GetGBufferNormalWorld(uv),b1,b2);
     dir=dir.x*b1+dir.y*b2+dir.z*GetGBufferNormalWorld(uv);
     vec3 hit=vec3(0.0);
     if(RayMarch(vPosWorld.xyz,dir,hit)){
-      vec3 l=EvalDiffuse(dir,CameraDir,uv)*EvalDiffuse(uLightDir,dir,GetScreenCoordinate(hit))*EvalDirectionalLight(GetScreenCoordinate(hit))/pdf;
+      // vec3 l=PBRcolor(dir,CameraDir,uv)*PBRcolor(uLightDir,dir,GetScreenCoordinate(hit))*visibility(GetScreenCoordinate(hit))/pdf;
+      vec3 l=PBRcolor(dir,CameraDir,uv)*PBRcolor(uLightDir,dir,GetScreenCoordinate(hit))*uLightRadiance/pdf;
       L_indirect=L_indirect+l;
+      L_indirect=vec3(20.0);
     }
   }
   L_indirect=L_indirect/float (SAMPLE_NUM);
   L=L+L_indirect;
   vec3 color = pow(clamp(L, vec3(0.0), vec3(1.0)), vec3(1.0 / 2.2));
+  // vec3 color=pow(L,vec3(1.0/2.2));
+  // vec3 color = L + vec3(0.09);
 
   gl_FragColor = vec4(vec3(color.rgb), 1.0);
 }
