@@ -8,6 +8,7 @@ uniform mat4 uModelMatrix;
 uniform mat4 uViewMatrix;
 uniform mat4 uProjectionMatrix;
 
+
 out mat4 vWorldToLight;
 
 out vec2 vTextureCoord;
@@ -17,6 +18,7 @@ out float vDepth;
 out vec4 vPositionFromLight;
 
 void main(void) {
+  
   vec3 vFragPos = (uModelMatrix * vec4(aPosition, 1.0)).xyz;
   vec4 posWorld = uModelMatrix * vec4(aPosition, 1.0);
   vPosWorld = posWorld.xyzw / posWorld.w;

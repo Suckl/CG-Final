@@ -6,8 +6,8 @@ uniform sampler2D uGDiffuse;
 uniform sampler2D uGDepth;
 uniform sampler2D uGNormalWorld;
 uniform sampler2D uGShadow;
-// uniform sampler2D uGPosWorld;
-uniform sampler2D uAlbedoMap;
+uniform sampler2D uGColor;
+// uniform sampler2D uAlbedoMap;
 uniform vec3 uColor;
 
 in mat4 vWorldToScreen;
@@ -53,8 +53,9 @@ vec3 PBRcolor(vec3 wi,vec3 wo,vec2 uv)
     vec3 Diffuse = texture2D(uGDiffuse,uv).xyz;
     float uRoughness = Diffuse.x;
     float uMetallic = Diffuse.y;
-    vec3 albedo = pow(texture2D(uAlbedoMap, vTextureCoord).rgb, vec3(2.2));
-    if(albedo==vec3(0.0)) albedo=uColor;
+    // vec3 albedo = pow(texture2D(uAlbedoMap, vTextureCoord).rgb, vec3(2.2));
+    // if(albedo==vec3(0.0)) albedo=uColor;
+    vec3 albedo=texture2D(uGColor,uv).xyz;
     // vec3 albedo=uColor;
     vec3 N = texture2D(uGNormalWorld,uv).xyz;
     N=normalize((N-vec3(0.5))*2);
@@ -82,7 +83,8 @@ vec3 PBRcolor(vec3 wi,vec3 wo,vec2 uv)
     vec3 BRDF = numerator / denominator;
 
     Lo += BRDF * radiance * NdotL;
-    vec3 color = Lo + vec3(0.001) * texture2D(uAlbedoMap, vTextureCoord).rgb;
+    // vec3 color = Lo + vec3(0.001) * texture2D(uAlbedoMap, vTextureCoord).rgb;
+    vec3 color=Lo;
     // vec3 color = Lo;
 
     color = color / (color + vec3(1.0));
@@ -206,8 +208,8 @@ float visibility(vec2 uv) {
 
 #define INIT_STEP 0.8
 #define MAX_STEPS 20
-#define EPS 1e-2
-#define THRES 0.1
+#define EPS 1e-3
+#define THRES 0.5
 bool outScreen(vec3 pos){
   vec2 uv = GetScreenCoordinate(pos);
   return any(bvec4(lessThan(uv, vec2(0.0)), greaterThan(uv, vec2(1.0))));
@@ -218,7 +220,8 @@ bool atFront(vec3 pos){
 bool hasInter(vec3 pos, vec3 dir, out vec3 hitPos){
   float d1 = GetGBufferDepth(GetScreenCoordinate(pos)) - GetDepth(pos) + EPS;
   float d2 = GetDepth(pos + dir) - GetGBufferDepth(GetScreenCoordinate(pos + dir)) + EPS;
-  if(d1 < THRES && d2 < THRES){
+  // if(d1 < THRES && d2 < THRES){
+    if( d1 < THRES){
     hitPos = pos + dir * d1 / (d1 + d2);
     return true;
   }  
@@ -226,30 +229,6 @@ bool hasInter(vec3 pos, vec3 dir, out vec3 hitPos){
 }
 
 bool RayMarch(vec3 ori, vec3 dir, out vec3 hitPos) {
-  // vec3 des = ori;
-  // vec2 uv=GetScreenCoordinate(des);
-  // int level=1;
-  // bool flag=false;
-  // for(int i=0;i<50;i++){
-  //   des=des+float(level)*0.01*dir;
-  //   uv=GetScreenCoordinate(des);
-  //   // 相交
-  //   if(GetDepth(des)>GetGBufferDepth(uv)){
-  //     if(level==1){
-  //       flag=true;
-  //       break;
-  //     }
-  //     else{
-  //       des=des-float(level)*0.1*dir;
-  //       level--;
-  //     }
-  //   }
-  //   else if(uv.x<0.0||uv.x>1.0||uv.y<0.0||uv.y>1.0) {
-  //     break;
-  //   }
-  //   else level++;
-  // }
-  // return flag;
   bool intersect = false, firstinter = false;
   float st = INIT_STEP;
   vec3 current = ori;
@@ -260,6 +239,7 @@ bool RayMarch(vec3 ori, vec3 dir, out vec3 hitPos) {
     else if(atFront(current + dir * st)){
       current += dir * st;
     }else{
+      // hit then move back
       firstinter = true;
       if(st < EPS){
         if(hasInter(current, dir * st * 2.0, hitPos)){
@@ -296,7 +276,7 @@ void main() {
       // vec3 l=PBRcolor(dir,CameraDir,uv)*PBRcolor(uLightDir,dir,GetScreenCoordinate(hit))*visibility(GetScreenCoordinate(hit))/pdf;
       vec3 l=PBRcolor(dir,CameraDir,uv)*PBRcolor(uLightDir,dir,GetScreenCoordinate(hit))*uLightRadiance/pdf;
       L_indirect=L_indirect+l;
-      L_indirect=vec3(20.0);
+      // L_indirect=vec3(20.0);
     }
   }
   L_indirect=L_indirect/float (SAMPLE_NUM);

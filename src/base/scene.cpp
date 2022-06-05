@@ -607,6 +607,8 @@ void Scene::drawList(){
             _gbufferShader->setMat4("uViewMatrix", view);
             _gbufferShader->setMat4("uLightVP",lightMatrix);
             _gbufferShader->setVec3("uLightPos", _directionlight->position);
+            _gbufferShader->setInt("uShadowMap",0);
+            _gbufferShader->setInt("uAlbedoMap",1);
             glEnable(GL_TEXTURE0);
             _depthmap->bind();
             for(int i = 0; i < _objectlist.ModelList.size(); i++){
@@ -617,9 +619,18 @@ void Scene::drawList(){
                 _gbufferShader->setMat4("uModelMatrix", _objectlist.ModelList[i]->getModelMatrix());
                 _gbufferShader->setFloat("roughness", _objectlist.roughness[i]);
                 _gbufferShader->setFloat("metallic", _objectlist.metallic[i]);
-                _objectlist.ModelList[i]->draw();
+                if(_objectlist.color_flag[i]) _gbufferShader->setVec3("uColor", _objectlist.Color[i]);
+                else _gbufferShader->setVec3("uColor", glm::vec3(1.0f));
+                if(!_objectlist.color_flag[i] && _texturelist.texture[_objectlist.TextureIndex[i]] != nullptr){
+                    glActiveTexture(GL_TEXTURE1);
+                    _texturelist.texture[_objectlist.TextureIndex[i]]->bind();
+                    _objectlist.ModelList[i]->draw();
+                    _texturelist.texture[_objectlist.TextureIndex[i]]->unbind();
+                }
+                else _objectlist.ModelList[i]->draw();
             }
             _gbufferfbo->unbind();
+            glEnable(GL_TEXTURE0);
             _depthmap->unbind();
 
             // pass3
@@ -633,28 +644,29 @@ void Scene::drawList(){
             glActiveTexture(GL_TEXTURE1);_depthtexture->bind();
             glActiveTexture(GL_TEXTURE2);_normaltexture->bind();
             glActiveTexture(GL_TEXTURE3);_visibilitytexture->bind();
-            // glActiveTexture(GL_TEXTURE4);_positiontexture->bind();
+            glActiveTexture(GL_TEXTURE4);_positiontexture->bind();
             _ssrShader->setInt("uGDiffuse",0);
             _ssrShader->setInt("uGDepth",1);
             _ssrShader->setInt("uGNormalWorld",2);
             _ssrShader->setInt("uGShadow",3);
-            // // _ssrShader->setInt("uGPosWorld",4);
-            _ssrShader->setInt("uAlbedoMap",4);
+            _ssrShader->setInt("uGColor",4);
+            // _ssrShader->setInt("uAlbedoMap",4);
             for(int i = 0; i < _objectlist.ModelList.size(); i++){
                 if(!_objectlist.visible[i]) continue;
                 if(series_flag && i<_serise.sequence.size() && _serise.max>-1 && _serise.sequence[i] != -1){
                     if (_serise.sequence[i] != count/20) continue;
                 }
                 _ssrShader->setMat4("uModelMatrix", _objectlist.ModelList[i]->getModelMatrix());
-                if(_objectlist.color_flag[i]) _ssrShader->setVec3("uColor", _objectlist.Color[i]);
-                else _ssrShader->setVec3("uColor", glm::vec3(1.0f));
-                if(!_objectlist.color_flag[i] && _texturelist.texture[_objectlist.TextureIndex[i]] != nullptr){
-                    glActiveTexture(GL_TEXTURE4);
-                    _texturelist.texture[_objectlist.TextureIndex[i]]->bind();
-                    _objectlist.ModelList[i]->draw();
-                    _texturelist.texture[_objectlist.TextureIndex[i]]->unbind();
-                }
-                else _objectlist.ModelList[i]->draw();
+                // if(_objectlist.color_flag[i]) _ssrShader->setVec3("uColor", _objectlist.Color[i]);
+                // else _ssrShader->setVec3("uColor", glm::vec3(1.0f));
+                // if(!_objectlist.color_flag[i] && _texturelist.texture[_objectlist.TextureIndex[i]] != nullptr){
+                //     glActiveTexture(GL_TEXTURE4);
+                //     _texturelist.texture[_objectlist.TextureIndex[i]]->bind();
+                //     _objectlist.ModelList[i]->draw();
+                //     _texturelist.texture[_objectlist.TextureIndex[i]]->unbind();
+                // }
+                // else _objectlist.ModelList[i]->draw();
+                _objectlist.ModelList[i]->draw();
             }
             glActiveTexture(GL_TEXTURE0);_diffusetexuture->unbind();
             glActiveTexture(GL_TEXTURE1);_depthtexture->unbind();

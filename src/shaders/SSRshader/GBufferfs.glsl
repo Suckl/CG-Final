@@ -4,7 +4,9 @@ uniform float metallic;
 // uniform sampler2D uKd;
 // uniform sampler2D uNt;
 uniform sampler2D uShadowMap;
+uniform sampler2D uAlbedoMap;
 uniform vec3 uLightPos;
+uniform vec3 uColor;
 #define NUM_SAMPLES 50
 #define NUM_RINGS 10
 in mat4 vWorldToLight;
@@ -113,6 +115,8 @@ float PCF(sampler2D shadowMap, vec4 coords) {
 // }
 
 void main(void) {
+  vec3 albedo = pow(texture2D(uAlbedoMap, vTextureCoord).rgb, vec3(2.2));
+  if(albedo==vec3(0.0)) albedo=uColor;
   vec3 shadowCoord = vPositionFromLight.xyz / vPositionFromLight.w;
   shadowCoord = shadowCoord * 0.5 + 0.5;
   //diffuse 
@@ -123,6 +127,6 @@ void main(void) {
   gl_FragData[2] = vec4(vNormalWorld*0.5+vec3(0.5), 1.0);
   //visible
   gl_FragData[3] = vec4(vec3(PCF(uShadowMap,vec4(shadowCoord,1.0))), 1.0);
-  //position
-  gl_FragData[4] = vec4(vec3(vPosWorld.xyz), 1.0);
+  //color
+  gl_FragData[4] = vec4(albedo, 1.0);
 }
