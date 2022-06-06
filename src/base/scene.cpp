@@ -40,7 +40,8 @@ Scene::Scene(const Options& options): Application(options) {
 	_skybox.reset(new SkyBox(skyboxTexturePaths));
     // init Series
     _serise.max=0;
-
+    // init fullscreen
+    _fullscrennquad.reset(new FullscreenQuad);
 
 	// init shaders
     initShader();
@@ -63,20 +64,32 @@ Scene::Scene(const Options& options): Application(options) {
     _gbufferfbo.reset(new Framebuffer);
     _normaltexture.reset(new DataTexture(GL_RGBA, _windowWidth, _windowHeight, GL_RGBA, GL_FLOAT));
     _visibilitytexture.reset(new DataTexture(GL_RGBA, _windowWidth, _windowHeight, GL_RGBA, GL_FLOAT));
-    _positiontexture.reset(new DataTexture(GL_RGBA, _windowWidth, _windowHeight, GL_RGBA, GL_FLOAT));
+    _colortexture.reset(new DataTexture(GL_RGBA, _windowWidth, _windowHeight, GL_RGBA, GL_FLOAT));
     _diffusetexuture.reset(new DataTexture(GL_RGBA, _windowWidth, _windowHeight, GL_RGBA, GL_FLOAT));
     _depthtexture.reset(new DataTexture(GL_RGBA, _windowWidth, _windowHeight, GL_RGBA, GL_FLOAT));
+    _positiontexture.reset(new DataTexture(GL_RGBA, _windowWidth, _windowHeight, GL_RGBA, GL_FLOAT));
     _depthgbuffer.reset(new DataTexture(GL_DEPTH_COMPONENT, _windowWidth, _windowHeight, GL_DEPTH_COMPONENT, GL_FLOAT));
     _gbufferfbo->bind();
-    const GLenum bufs[5]={GL_COLOR_ATTACHMENT0,GL_COLOR_ATTACHMENT1,GL_COLOR_ATTACHMENT2,GL_COLOR_ATTACHMENT3,GL_COLOR_ATTACHMENT4};
-    glDrawBuffers(5,bufs);
+    const GLenum bufs[6]={GL_COLOR_ATTACHMENT0,GL_COLOR_ATTACHMENT1,GL_COLOR_ATTACHMENT2,GL_COLOR_ATTACHMENT3,GL_COLOR_ATTACHMENT4,
+                        GL_COLOR_ATTACHMENT5};
+    glDrawBuffers(6,bufs);
     _gbufferfbo->attach(*_diffusetexuture,GL_COLOR_ATTACHMENT0);
     _gbufferfbo->attach(*_depthgbuffer,GL_DEPTH_ATTACHMENT);
     _gbufferfbo->attach(*_depthtexture,GL_COLOR_ATTACHMENT1);
     _gbufferfbo->attach(*_normaltexture,GL_COLOR_ATTACHMENT2);
     _gbufferfbo->attach(*_visibilitytexture,GL_COLOR_ATTACHMENT3);
-    _gbufferfbo->attach(*_positiontexture,GL_COLOR_ATTACHMENT4);
+    _gbufferfbo->attach(*_colortexture,GL_COLOR_ATTACHMENT4);
+    _gbufferfbo->attach(*_positiontexture,GL_COLOR_ATTACHMENT5);
     _gbufferfbo->unbind();
+    // init filterFBO
+    _filterfbo.reset(new Framebuffer);
+    _beauty.reset(new DataTexture(GL_RGBA, _windowWidth, _windowHeight, GL_RGBA, GL_FLOAT));
+    _depthfilter.reset(new DataTexture(GL_DEPTH_COMPONENT, _windowWidth, _windowHeight, GL_DEPTH_COMPONENT, GL_FLOAT));
+    _filterfbo->bind();
+    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+    _filterfbo->attach(*_beauty,GL_COLOR_ATTACHMENT0);
+    _filterfbo->attach(*_depthfilter,GL_DEPTH_ATTACHMENT);
+    _filterfbo->unbind();
 }
 
 Scene::~Scene() {
@@ -136,6 +149,12 @@ void Scene::initShader(){
     _ssrShader->attachVertexShaderFromFile("../../src/shaders/SSRshader/SSRvs.glsl");
     _ssrShader->attachFragmentShaderFromFile("../../src/shaders/SSRshader/SSRfs.glsl");
     _ssrShader->link();
+
+    _filterShader.reset(new GLSLProgram);
+    _filterShader->attachVertexShaderFromFile("../../src/shaders/SSRshader/Filtervs.glsl");
+    _filterShader->attachFragmentShaderFromFile("../../src/shaders/SSRshader/Filterfs.glsl");
+    _filterShader->link();
+
 }
 
 void Scene::handleInput() {
@@ -655,7 +674,7 @@ void Scene::drawList(){
             glActiveTexture(GL_TEXTURE1);_depthtexture->bind();
             glActiveTexture(GL_TEXTURE2);_normaltexture->bind();
             glActiveTexture(GL_TEXTURE3);_visibilitytexture->bind();
-            glActiveTexture(GL_TEXTURE4);_positiontexture->bind();
+            glActiveTexture(GL_TEXTURE4);_colortexture->bind();
             _ssrShader->setInt("uGDiffuse",0);
             _ssrShader->setInt("uGDepth",1);
             _ssrShader->setInt("uGNormalWorld",2);
@@ -668,23 +687,138 @@ void Scene::drawList(){
                     if (_serise.sequence[i] != count/20) continue;
                 }
                 _ssrShader->setMat4("uModelMatrix", _objectlist.ModelList[i]->getModelMatrix());
-                // if(_objectlist.color_flag[i]) _ssrShader->setVec3("uColor", _objectlist.Color[i]);
-                // else _ssrShader->setVec3("uColor", glm::vec3(1.0f));
-                // if(!_objectlist.color_flag[i] && _texturelist.texture[_objectlist.TextureIndex[i]] != nullptr){
-                //     glActiveTexture(GL_TEXTURE4);
-                //     _texturelist.texture[_objectlist.TextureIndex[i]]->bind();
-                //     _objectlist.ModelList[i]->draw();
-                //     _texturelist.texture[_objectlist.TextureIndex[i]]->unbind();
-                // }
-                // else _objectlist.ModelList[i]->draw();
                 _objectlist.ModelList[i]->draw();
             }
             glActiveTexture(GL_TEXTURE0);_diffusetexuture->unbind();
             glActiveTexture(GL_TEXTURE1);_depthtexture->unbind();
             glActiveTexture(GL_TEXTURE2);_normaltexture->unbind();
             glActiveTexture(GL_TEXTURE3);_visibilitytexture->unbind();
-            glActiveTexture(GL_TEXTURE4);_positiontexture->unbind();
+            glActiveTexture(GL_TEXTURE4);_colortexture->unbind();
         }
+        break;
+    
+        case ShadowRenderMode::SSR_Filter:{
+            // pass1
+            glm::vec3 lightPos = _directionlight->position;
+            glm::mat4 lightProjection, lightView, lightMatrix;
+            float size = 50.0f;
+            
+            lightProjection = glm::ortho(-size, size, -size, size, 0.1f, 100.0f);
+            lightView = glm::lookAt(lightPos, glm::vec3(0.0f), glm::vec3(0.0, 1.0, 0.0));
+            lightMatrix = lightProjection * lightView;
+
+            _shadowShader->use();
+            glViewport(0, 0, _shadowWidth, _shadowHeight);
+            _depthfbo->bind();
+            glClear(GL_DEPTH_BUFFER_BIT);
+            
+            _shadowShader->setMat4("uLightSpaceMatrix", lightMatrix);           
+            for(int i = 0; i < _objectlist.ModelList.size(); i++){
+                if(!_objectlist.visible[i]) continue;
+                if(series_flag && i<_serise.sequence.size() && _serise.max>-1 && _serise.sequence[i] != -1){
+                    if (_serise.sequence[i] != count/20) continue;
+                }
+                _shadowShader->setMat4("model", _objectlist.ModelList[i]->getModelMatrix());
+                _objectlist.ModelList[i]->draw();
+            }
+            _depthfbo->unbind();
+            
+            // reset viewport
+            glViewport(0, 0, _windowWidth, _windowHeight);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            // pass2
+            _gbufferfbo->bind();
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            _gbufferShader->use();
+            const glm::mat4 projection = _camera->getProjectionMatrix();
+            const glm::mat4 view = _camera->getViewMatrix();
+            _gbufferShader->setMat4("uProjectionMatrix", projection);
+            _gbufferShader->setMat4("uViewMatrix", view);
+            _gbufferShader->setMat4("uLightVP",lightMatrix);
+            _gbufferShader->setVec3("uLightPos", _directionlight->position);
+            _gbufferShader->setInt("uShadowMap",0);
+            _gbufferShader->setInt("uAlbedoMap",1);
+            glEnable(GL_TEXTURE0);
+            _depthmap->bind();
+            for(int i = 0; i < _objectlist.ModelList.size(); i++){
+                if(!_objectlist.visible[i]) continue;
+                if(series_flag && i<_serise.sequence.size() && _serise.max>-1 && _serise.sequence[i] != -1){
+                    if (_serise.sequence[i] != count/20) continue;
+                }
+                _gbufferShader->setMat4("uModelMatrix", _objectlist.ModelList[i]->getModelMatrix());
+                _gbufferShader->setFloat("roughness", _objectlist.roughness[i]);
+                _gbufferShader->setFloat("metallic", _objectlist.metallic[i]);
+                if(_objectlist.color_flag[i]) _gbufferShader->setVec3("uColor", _objectlist.Color[i]);
+                else _gbufferShader->setVec3("uColor", glm::vec3(1.0f));
+                if(!_objectlist.color_flag[i] && _texturelist.texture[_objectlist.TextureIndex[i]] != nullptr){
+                    glActiveTexture(GL_TEXTURE1);
+                    _texturelist.texture[_objectlist.TextureIndex[i]]->bind();
+                    _objectlist.ModelList[i]->draw();
+                    _texturelist.texture[_objectlist.TextureIndex[i]]->unbind();
+                }
+                else _objectlist.ModelList[i]->draw();
+            }
+            _gbufferfbo->unbind();
+            glEnable(GL_TEXTURE0);
+            _depthmap->unbind();
+
+            // pass3
+            _filterfbo->bind();
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            _ssrShader->use();
+            _ssrShader->setMat4("uProjectionMatrix", projection);
+            _ssrShader->setMat4("uViewMatrix", view);
+            _ssrShader->setVec3("uLightDir", _directionlight->position);
+            _ssrShader->setVec3("uCameraPos", _camera->position);
+            _ssrShader->setVec3("uLightRadiance", _directionlight->radiance);
+            glActiveTexture(GL_TEXTURE0);_diffusetexuture->bind();
+            glActiveTexture(GL_TEXTURE1);_depthtexture->bind();
+            glActiveTexture(GL_TEXTURE2);_normaltexture->bind();
+            glActiveTexture(GL_TEXTURE3);_visibilitytexture->bind();
+            glActiveTexture(GL_TEXTURE4);_colortexture->bind();
+            _ssrShader->setInt("uGDiffuse",0);
+            _ssrShader->setInt("uGDepth",1);
+            _ssrShader->setInt("uGNormalWorld",2);
+            _ssrShader->setInt("uGShadow",3);
+            _ssrShader->setInt("uGColor",4);
+            for(int i = 0; i < _objectlist.ModelList.size(); i++){
+                if(!_objectlist.visible[i]) continue;
+                if(series_flag && i<_serise.sequence.size() && _serise.max>-1 && _serise.sequence[i] != -1){
+                    if (_serise.sequence[i] != count/20) continue;
+                }
+                _ssrShader->setMat4("uModelMatrix", _objectlist.ModelList[i]->getModelMatrix());
+                _objectlist.ModelList[i]->draw();
+            }
+            _skybox->draw(projection, view);
+            glActiveTexture(GL_TEXTURE0);_diffusetexuture->unbind();
+            glActiveTexture(GL_TEXTURE1);_depthtexture->unbind();
+            glActiveTexture(GL_TEXTURE2);_normaltexture->unbind();
+            glActiveTexture(GL_TEXTURE3);_visibilitytexture->unbind();
+            glActiveTexture(GL_TEXTURE4);_colortexture->unbind();
+            
+            _filterfbo->unbind();
+
+            // pass4
+            _filterShader->use();
+            glActiveTexture(GL_TEXTURE1);_normaltexture->bind();
+            glActiveTexture(GL_TEXTURE2);_positiontexture->bind();
+            glActiveTexture(GL_TEXTURE3);_beauty->bind();
+            _filterShader->setInt("uGNormalWorld",1);
+            _filterShader->setInt("uGPosition",2);
+            _filterShader->setInt("Width",_windowWidth);
+            _filterShader->setInt("Height",_windowHeight);
+            _filterShader->setInt("uBeauty",3);
+
+
+            _fullscrennquad->draw();
+
+
+            glActiveTexture(GL_TEXTURE1);_normaltexture->unbind();
+            glActiveTexture(GL_TEXTURE2);_positiontexture->unbind();
+            glActiveTexture(GL_TEXTURE3);_beauty->unbind();
+            glActiveTexture(GL_TEXTURE0);
+        }
+        
         break;
     }
 }
@@ -730,7 +864,8 @@ void Scene::drawGUI()  {
         ImGui::RadioButton("ShadowMapping",(int *)&_ShadowRenderMode,(int)ShadowRenderMode::ShadowMapping);ImGui::SameLine();
         ImGui::RadioButton("PCF",(int *)&_ShadowRenderMode,(int)ShadowRenderMode::PCF);ImGui::SameLine();
         ImGui::RadioButton("PCSS",(int *)&_ShadowRenderMode,(int)ShadowRenderMode::PCSS);
-        ImGui::RadioButton("SSR",(int *)&_ShadowRenderMode,(int)ShadowRenderMode::SSR);
+        ImGui::RadioButton("SSR",(int *)&_ShadowRenderMode,(int)ShadowRenderMode::SSR);ImGui::SameLine();
+        ImGui::RadioButton("SSR_Filter",(int *)&_ShadowRenderMode,(int)ShadowRenderMode::SSR_Filter);
         ImGui::Separator();
         ImGui::Text("Game Options");
         ImGui::Checkbox("Collision detect",&collision_flag);

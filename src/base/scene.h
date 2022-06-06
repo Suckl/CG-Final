@@ -9,9 +9,10 @@
 #include <imgui_impl_opengl3.h>
 #include"application.h"
 #include"framebuffer.h"
+#include"fullscreen_quad.h"
 
 enum class ShadowRenderMode {
-	None,ShadowMapping, PCF, PCSS,SSR
+	None,ShadowMapping, PCF, PCSS,SSR,SSR_Filter
 };
 
 enum class ScreenShotMode {
@@ -71,18 +72,24 @@ private:
 
     std::shared_ptr<GLSLProgram> _gbufferShader;
     std::shared_ptr<GLSLProgram> _ssrShader;
+    std::shared_ptr<GLSLProgram> _filterShader;
 
     // SSR resources
     std::unique_ptr<Framebuffer> _depthfbo;
     std::unique_ptr<Framebuffer> _gbufferfbo;
+    std::unique_ptr<Framebuffer> _filterfbo;
 
     std::unique_ptr<DataTexture> _depthmap;
     std::unique_ptr<DataTexture> _depthgbuffer;
+    std::unique_ptr<DataTexture> _depthfilter;
     std::unique_ptr<DataTexture> _normaltexture;
     std::unique_ptr<DataTexture> _visibilitytexture;
-    std::unique_ptr<DataTexture> _positiontexture;
+    std::unique_ptr<DataTexture> _colortexture;
     std::unique_ptr<DataTexture> _diffusetexuture;
     std::unique_ptr<DataTexture> _depthtexture;
+    std::unique_ptr<DataTexture> _positiontexture;
+    std::unique_ptr<DataTexture> _beauty;
+    std::unique_ptr<FullscreenQuad> _fullscrennquad;
 
     enum ShadowRenderMode _ShadowRenderMode=ShadowRenderMode::None;
     enum ScreenShotMode _ScreenShotMode=ScreenShotMode::Normal;

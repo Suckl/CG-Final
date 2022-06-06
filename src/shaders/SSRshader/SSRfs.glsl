@@ -131,6 +131,7 @@ vec3 SampleHemisphereCos(inout float s, out float pdf) {
 }
 
 
+
 void LocalBasis(vec3 n, out vec3 b1, out vec3 b2) {
   float sign_ = sign(n.z);
   if (n.z == 0.0) {
@@ -254,6 +255,27 @@ bool RayMarch(vec3 ori, vec3 dir, out vec3 hitPos) {
   return intersect;
 }
 
+// cos GGX
+vec3 SampleHemisphereGGX(inout float s, out float pdf,vec2 uv,vec3 V){
+    vec2 E=Rand2(s);
+    float a2=pow(texture2D(uGDiffuse,uv).x,4);
+    float Phi = 2 * PI * E.x;
+    float CosTheta = sqrt( (1 - E.y) / ( 1 + (a2 - 1) * E.y ) );
+    float SinTheta = sqrt( 1 - CosTheta * CosTheta );
+
+    vec3 H;
+    H.x = SinTheta * cos( Phi );
+    H.y = SinTheta * sin( Phi );
+    H.z = CosTheta;
+
+    float d = ( CosTheta * a2 - CosTheta ) * CosTheta + 1;
+    float D = a2 / ( PI*d*d );
+    vec3 L=normalize(H * 2.0f * dot(V, H) - V);
+    pdf = D * CosTheta;
+
+    return L;
+}
+
 #define SAMPLE_NUM 20
 
 void main() {
@@ -264,10 +286,12 @@ void main() {
   vec3 L = vec3(0.0);
   L = visibility(uv)*PBRcolor(uLightDir,CameraDir,uv);
   vec3 L_indirect = vec3(0.0);
+  // uniform
   for(int i=0;i<SAMPLE_NUM;i++){
     float pdf=0.0;
     vec3 b1,b2;
     // vec3 dir=SampleHemisphereCos(s,pdf);
+    // vec3 dir=SampleHemisphereGGX(s,pdf,uv,CameraDir);
     vec3 dir=SampleHemisphereUniform(s,pdf);
     LocalBasis(GetGBufferNormalWorld(uv),b1,b2);
     dir=dir.x*b1+dir.y*b2+dir.z*GetGBufferNormalWorld(uv);

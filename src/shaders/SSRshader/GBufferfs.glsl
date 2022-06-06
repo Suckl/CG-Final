@@ -129,4 +129,6 @@ void main(void) {
   gl_FragData[3] = vec4(vec3(PCF(uShadowMap,vec4(shadowCoord,1.0))), 1.0);
   //color
   gl_FragData[4] = vec4(albedo, 1.0);
+  // position
+  gl_FragData[5] = vec4(vPosWorld.xyz,1.0);
 }
