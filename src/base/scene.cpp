@@ -28,13 +28,21 @@ Scene::Scene(const Options& options): Application(options) {
 	// init camera
 	_camera.reset(new PerspectiveCamera(
 		glm::radians(50.0f), 1.0f * _windowWidth / _windowHeight, 0.1f, 10000.0f));
-	_camera->position.z = 10.0f;
+    _camera->position.y = 10.0f;
+	_camera->position.z = 30.0f;
 
 	// init light
 	_directionlight.reset(new DirectionalLight());
-	// LightList[0]->rotation = glm::angleAxis(glm::radians(45.0f), -glm::vec3(1.0f, 1.0f, 1.0f));
-    // LightList[0]->position = glm::vec3(3.0f,0.0f,0.0f);
-    _directionlight->position =glm::vec3(0.5f, 4.0f, 2.0f);
+    _directionlight->position =glm::vec3(2.33f, 20.0f, 5.0f);
+
+    const std::string lightCubePath = "../media/sphere.obj";
+    _lightlist.ModelList.push_back(nullptr);
+    _lightlist.ModelList[0].reset(new Model(lightCubePath));
+    _lightlist.filepath.push_back(lightCubePath);
+    _lightlist.visible.push_back(true);
+    _lightlist.Color.push_back(glm::vec3(1.0));
+    _lightlist.ModelList[0]->position = _directionlight->position;
+    _lightlist.ModelList[0]->scale = glm::vec3(0.3f);
 
 	// init skybox
 	_skybox.reset(new SkyBox(skyboxTexturePaths));
@@ -228,6 +236,8 @@ void Scene::renderFrame() {
 	// draw scene
 	drawList();
 
+    drawLight();
+
     // draw skybox
 	_skybox->draw(projection, view);
     
@@ -276,39 +286,12 @@ bool Scene::addTexture(const std::string filename,const std::string name){
     return true;
 }
 
-void Scene::debugShadowMap(float near_plane, float far_plane) {
+void Scene::drawLight() {
     _lightCubeShader->use();
-    _lightCubeShader->setFloat("near_plane", near_plane);
-    _lightCubeShader->setFloat("far_plane", far_plane);
-    glActiveTexture(GL_TEXTURE0);
-    _depthmap->bind();
-
-    unsigned int quadVAO = 0;
-    unsigned int quadVBO;
-
-    if (quadVAO == 0)
-    {
-        float quadVertices[] = {
-            // positions        // texture Coords
-            -1.0f,  1.0f, 0.0f, 0.0f, 1.0f,
-            -1.0f, -1.0f, 0.0f, 0.0f, 0.0f,
-            1.0f,  1.0f, 0.0f, 1.0f, 1.0f,
-            1.0f, -1.0f, 0.0f, 1.0f, 0.0f,
-        };
-        // setup plane VAO
-        glGenVertexArrays(1, &quadVAO);
-        glGenBuffers(1, &quadVBO);
-        glBindVertexArray(quadVAO);
-        glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
-        glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), &quadVertices, GL_STATIC_DRAW);
-        glEnableVertexAttribArray(0);
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
-        glEnableVertexAttribArray(1);
-        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
-    }
-    glBindVertexArray(quadVAO);
-    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-    glBindVertexArray(0);
+    _lightCubeShader->setMat4("projection", _camera->getProjectionMatrix());
+    _lightCubeShader->setMat4("view", _camera->getViewMatrix());
+    _lightCubeShader->setMat4("model", _lightlist.ModelList[0]->getModelMatrix());
+    _lightlist.ModelList[0]->draw();
 }
 
 void Scene::drawList(){
@@ -353,9 +336,7 @@ void Scene::drawList(){
             glm::mat4 lightProjection, lightView, lightMatrix;
             float size = 50.0f;
             
-            lightProjection = glm::ortho(-size, size, -size, size, 0.1f, 100.0f);
-            // lightProjection =glm::perspective(glm::radians(45.0f), 1.0f,0.1f, 100.0f);
-            // lightView = glm::lookAt(lightPos, lightPos + LightList[0]->getFront(), LightList[0]->getUp());
+            lightProjection = glm::ortho(-size, size, -size, size, near_plane, far_plane);
             lightView = glm::lookAt(lightPos, glm::vec3(0.0f), glm::vec3(0.0, 1.0, 0.0));;
             lightMatrix = lightProjection * lightView;
 
@@ -433,9 +414,7 @@ void Scene::drawList(){
             glm::mat4 lightProjection, lightView, lightMatrix;
             float size = 50.0f;
             
-            lightProjection = glm::ortho(-size, size, -size, size, 0.1f, 100.0f);
-            // lightProjection =glm::perspective(glm::radians(90.0f), 1.0f,0.1f, 100.0f);
-            // lightView = glm::lookAt(lightPos, lightPos + LightList[0]->getFront(), LightList[0]->getUp());
+            lightProjection = glm::ortho(-size, size, -size, size, near_plane, far_plane);
             lightView = glm::lookAt(lightPos, glm::vec3(0.0f), glm::vec3(0.0, 1.0, 0.0));
             lightMatrix = lightProjection * lightView;
 
@@ -510,7 +489,7 @@ void Scene::drawList(){
             glm::mat4 lightProjection, lightView, lightMatrix;
             float size = 50.0f;
             
-            lightProjection = glm::ortho(-size, size, -size, size, 0.1f, 100.0f);
+            lightProjection = glm::ortho(-size, size, -size, size, near_plane, far_plane);
             //lightView = glm::lookAt(lightPos, lightPos + LightList[0]->getFront(), LightList[0]->getUp());
             lightView = glm::lookAt(lightPos, glm::vec3(0.0f), glm::vec3(0.0, 1.0, 0.0));
             lightMatrix = lightProjection * lightView;
@@ -585,7 +564,7 @@ void Scene::drawList(){
             glm::mat4 lightProjection, lightView, lightMatrix;
             float size = 50.0f;
             
-            lightProjection = glm::ortho(-size, size, -size, size, 0.1f, 100.0f);
+            lightProjection = glm::ortho(-size, size, -size, size, near_plane, far_plane);
             lightView = glm::lookAt(lightPos, glm::vec3(0.0f), glm::vec3(0.0, 1.0, 0.0));
             lightMatrix = lightProjection * lightView;
 
@@ -887,57 +866,63 @@ void Scene::drawGUIobj(bool &flag){
             if(ImGui::TreeNode((void*)(intptr_t)i,"object %s",_objectlist.objectname[i].c_str())){
                 ImVec4 color = ImVec4(_objectlist.Color[i].x, _objectlist.Color[i].y, _objectlist.Color[i].z,1.0f);
                 const float rota_angle=0.05f;
-                float position[3]={_objectlist.ModelList[i]->position.x,_objectlist.ModelList[i]->position.y,_objectlist.ModelList[i]->position.z};
+                float position[3] = {_objectlist.ModelList[i]->position.x,_objectlist.ModelList[i]->position.y,_objectlist.ModelList[i]->position.z};
                 float scale[3] = {_objectlist.ModelList[i]->scale.x,_objectlist.ModelList[i]->scale.y,_objectlist.ModelList[i]->scale.z};
                 static char newname[128]="Type your new object name here";
-                bool color_flag=_objectlist.color_flag[i];
-                float roughness=_objectlist.roughness[i];
-                float metallic=_objectlist.metallic[i];
-                ImGui::Checkbox("Use color instead of texture",&color_flag);
-                _objectlist.color_flag[i]=color_flag;
-                ImGui::ColorEdit3("Object Color",(float*)&color);
-                _objectlist.Color[i]=glm::vec3(color.x,color.y,color.z);
-                ImGui::SliderFloat("Roughness",&roughness,0.0f,1.0f,"%.2f");
+                bool color_flag =_objectlist.color_flag[i];
+                float roughness =_objectlist.roughness[i];
+                float metallic = _objectlist.metallic[i];
+                ImGui::Checkbox("Use color instead of texture", &color_flag);
+                _objectlist.color_flag[i] = color_flag;
+                ImGui::ColorEdit3("Object Color", (float*)&color);
+                _objectlist.Color[i]=glm::vec3(color.x, color.y, color.z);
+                ImGui::SliderFloat("Roughness",&roughness, 0.0f, 1.0f, "%.2f");
                 _objectlist.roughness[i]=roughness;
-                ImGui::SliderFloat("Metallic",&metallic,0.0f,1.0f,"%.2f");
+                ImGui::SliderFloat("Metallic",&metallic, 0.0f, 1.0f, "%.2f");
                 _objectlist.metallic[i]=metallic;
-                ImGui::DragFloat3("Scale",scale,0.005f,0.0f,10.0f,"%.3f");ImGui::SameLine();
+                ImGui::DragFloat3("Scale", scale, 0.005f, 0.0f, 10.0f, "%.3f");ImGui::SameLine();
                 if(ImGui::Button("Proportional base scale.x")){
-                    scale[2]=scale[1]=scale[0];  
+                    scale[2] = scale[1] = scale[0];  
                 }
-                ImGui::DragFloat3("Position",position,0.005f,-100.0f,100.0f,"%.3f");
-                _objectlist.ModelList[i]->scale=glm::vec3{scale[0],scale[1],scale[2]};
-                _objectlist.ModelList[i]->position=glm::vec3{position[0],position[1],position[2]};
+                ImGui::DragFloat3("Position", position, 0.005f, -100.0f, 100.0f, "%.3f");
+                _objectlist.ModelList[i]->scale = glm::vec3{scale[0], scale[1], scale[2]};
+                _objectlist.ModelList[i]->position = glm::vec3{position[0], position[1], position[2]};
                 float spacing = ImGui::GetStyle().ItemInnerSpacing.x;
                 ImGui::PushButtonRepeat(true);
                 ImGui::Text("Hode to rotate:   ");ImGui::SameLine();
                 ImGui::Text("rotation-x");ImGui::SameLine();
                 if (ImGui::ArrowButton("##left", ImGuiDir_Left)) {
-                    _objectlist.ModelList[i]->rotation =glm::normalize(glm::quat{ cos(rota_angle / 2),0.0,1.0*sin(rota_angle / 2),0.0 }*_objectlist.ModelList[i]->rotation);
+                    _objectlist.ModelList[i]->rotation =glm::normalize(
+                        glm::quat{ cos(rota_angle / 2), 0.0, 1.0 * sin(rota_angle / 2),0.0 } * _objectlist.ModelList[i]->rotation);
                 }
                 ImGui::SameLine(0.0f, spacing);
                 if (ImGui::ArrowButton("##right", ImGuiDir_Right)) {
-                    _objectlist.ModelList[i]->rotation =glm::normalize(glm::quat{ cos(rota_angle / 2),0.0,-1.0*sin(rota_angle / 2),0.0 }*_objectlist.ModelList[i]->rotation);
+                    _objectlist.ModelList[i]->rotation =glm::normalize(
+                        glm::quat{ cos(rota_angle / 2), 0.0, -1.0 * sin(rota_angle / 2),0.0 }  *_objectlist.ModelList[i]->rotation);
                 }
                 ImGui::SameLine();ImGui::Text("rotation-y");ImGui::SameLine();
                 if (ImGui::ArrowButton("##left", ImGuiDir_Left)) {
-                    _objectlist.ModelList[i]->rotation =glm::normalize(glm::quat{ cos(rota_angle / 2),1.0*sin(rota_angle / 2),0.0,0.0 }*_objectlist.ModelList[i]->rotation);
+                    _objectlist.ModelList[i]->rotation =glm::normalize(
+                        glm::quat{ cos(rota_angle / 2),1.0*sin(rota_angle / 2), 0.0, 0.0 } * _objectlist.ModelList[i]->rotation);
                 }
                 ImGui::SameLine(0.0f, spacing);
                 if (ImGui::ArrowButton("##right", ImGuiDir_Right)) {
-                    _objectlist.ModelList[i]->rotation =glm::normalize(glm::quat{ cos(rota_angle / 2),-1.0*sin(rota_angle / 2),0.0,0.0 }*_objectlist.ModelList[i]->rotation);
+                    _objectlist.ModelList[i]->rotation =glm::normalize(
+                        glm::quat{ cos(rota_angle / 2), -1.0 * sin(rota_angle / 2), 0.0, 0.0 } * _objectlist.ModelList[i]->rotation);
                 }
                 ImGui::SameLine();ImGui::Text("rotation-z");ImGui::SameLine();
                 if (ImGui::ArrowButton("##left", ImGuiDir_Left)) {
-                    _objectlist.ModelList[i]->rotation =glm::normalize(glm::quat{ cos(rota_angle / 2),0.0,0.0,1.0*sin(rota_angle / 2) }*_objectlist.ModelList[i]->rotation);
+                    _objectlist.ModelList[i]->rotation =glm::normalize(
+                        glm::quat{ cos(rota_angle / 2), 0.0, 0.0, 1.0 * sin(rota_angle / 2) } * _objectlist.ModelList[i]->rotation);
                 }
                 ImGui::SameLine(0.0f, spacing);
                 if (ImGui::ArrowButton("##right", ImGuiDir_Right)) {
-                    _objectlist.ModelList[i]->rotation =glm::normalize(glm::quat{ cos(rota_angle / 2),0.0,0.0,-1.0*sin(rota_angle / 2) }*_objectlist.ModelList[i]->rotation);
+                    _objectlist.ModelList[i]->rotation =glm::normalize(
+                        glm::quat{ cos(rota_angle / 2), 0.0, 0.0, -1.0 * sin(rota_angle / 2) } * _objectlist.ModelList[i]->rotation);
                 }
                 ImGui::PopButtonRepeat();
-                if(!_objectlist.visible[i]&&ImGui::Button("Click me to display this object")) _objectlist.visible[i]=true;
-                else if(_objectlist.visible[i]&&ImGui::Button("Click me to hide this object")) _objectlist.visible[i]=false;
+                if(!_objectlist.visible[i] && ImGui::Button("Click me to display this object")) _objectlist.visible[i] = true;
+                else if(_objectlist.visible[i] && ImGui::Button("Click me to hide this object")) _objectlist.visible[i] = false;
                 int texture_current_idx = _objectlist.TextureIndex[i]; // Here we store our selection data as an index.
                 ImGui::Text("Click to choose texture for object");
                 if (ImGui::BeginListBox("TextureList"))
@@ -957,14 +942,14 @@ void Scene::drawGUIobj(bool &flag){
                 if(ImGui::Button("Export this orginal model to filename.obj")) 
                     exportOBJ(_objectlist.ModelList[i]->_vertices,_objectlist.ModelList[i]->_indices,_objectlist.objectname[i]);
                 if(ImGui::Button("Export transformed model to filename.obj")) 
-                    exportTransOBJ(_objectlist.ModelList[i]->_vertices,_objectlist.ModelList[i]->_indices,_objectlist.objectname[i],_objectlist.ModelList[i]->getModelMatrix());
-                if(_objectlist.ModelList.size()>1&&ImGui::Button("Delete this object")) deleteModel(i);
-                ImGui::InputText("Change object name", newname, IM_ARRAYSIZE(newname));ImGui::SameLine();
+                    exportTransOBJ(_objectlist.ModelList[i]->_vertices,_objectlist.ModelList[i]->_indices,_objectlist.objectname[i], _objectlist.ModelList[i]->getModelMatrix());
+                if(_objectlist.ModelList.size() > 1 && ImGui::Button("Delete this object")) deleteModel(i);
+                ImGui::InputText("Change object name", newname, IM_ARRAYSIZE(newname)); ImGui::SameLine();
                 if(ImGui::Button("Enter name")){
-                    std::string name=newname;
-                    _objectlist.objectname[i]=name;
-                    name="Change Success!";
-                    name=" ";
+                    std::string name = newname;
+                    _objectlist.objectname[i] = name;
+                    name = "Change Success!";
+                    name = " ";
                     strcpy(newname,name.c_str());
                 }
                 ImGui::TreePop();
@@ -974,30 +959,32 @@ void Scene::drawGUIobj(bool &flag){
     if(ImGui::CollapsingHeader("Draw Series")){
         if(ImGui::Button("Init Series")){
             _serise.sequence.clear();
-            for (int i = 0; i < _objectlist.ModelList.size(); i++){
+            for (int i = 0; i < _objectlist.ModelList.size(); ++i){
                 _serise.sequence.push_back(-1);
             }
         }
-        _serise.max=-1;
-        for(int i=0;i<_serise.sequence.size();i++){
-            ImGui::SliderInt(_objectlist.objectname[i].c_str(),&_serise.sequence[i],-1,20);
-            if(_serise.sequence[i]>_serise.max) _serise.max=_serise.sequence[i];
+        _serise.max = -1;
+        for(int i = 0; i<_serise.sequence.size(); ++i){
+            ImGui::SliderInt(_objectlist.objectname[i].c_str(), &_serise.sequence[i],-1,20);
+            if(_serise.sequence[i] > _serise.max) _serise.max=_serise.sequence[i];
         }
     }
     if(ImGui::CollapsingHeader("Light Status")){
         ImVec4 color = ImVec4(_directionlight->color.x, _directionlight->color.y, _directionlight->color.z,1.0f);
-        static float position[3]={_directionlight->position.x,_directionlight->position.y,_directionlight->position.z};
+        static float position[3] = {_directionlight->position.x,_directionlight->position.y,_directionlight->position.z};
+
         ImGui::DragFloat3("light position",position,0.05f,-10.0f,10.0f,"%.3f");
-        _directionlight->position=glm::vec3(position[0],position[1],position[2]);
-        ImGui::DragFloat("Light Intensity",&_directionlight->intensity,0.05f,0.1f,10.0f,"%.3f");
+        _directionlight->position = glm::vec3(position[0],position[1],position[2]);
+        _lightlist.ModelList[0]->position = glm::vec3(position[0],position[1],position[2]);
+
+        ImGui::DragFloat("Light Intensity",&_directionlight->intensity, 0.05f, 0.1f, 10.0f, "%.3f");
         ImGui::ColorEdit3("Light Color",(float*)&color);
-        _directionlight->color=glm::vec3(color.x,color.y,color.z);
-        _directionlight->radiance=_directionlight->intensity*_directionlight->color;
+        _directionlight->color = glm::vec3(color.x, color.y, color.z);
+        _directionlight->radiance = _directionlight->intensity * _directionlight->color;
     }
     
     ImGui::End();
 }
-
 void Scene::drawGUIhelp(bool &flag){
     ImGui::Begin("Helps", &flag);
     ImGui::Text("This is something could give you a help.");
