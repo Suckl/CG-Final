@@ -8,9 +8,10 @@
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 #include"application.h"
+#include"framebuffer.h"
 
 enum class ShadowRenderMode {
-	None, ShadowMapping, PCF, PCSS, PointLightShadow
+	None,ShadowMapping, PCF, PCSS,SSR
 };
 
 enum class ScreenShotMode {
@@ -33,13 +34,6 @@ struct ObjectList{
     std::vector<std::string> filepath;//保存用
 };
 
-struct LightList{
-    std::vector<bool> visible;//可见性
-    std::vector<std::unique_ptr<Model>> ModelList;//物体模型
-    std::vector<glm::vec3> Color;//颜色坐标
-    std::vector<std::string> filepath;//保存用
-};
-
 struct TextureList{
     std::vector<std::shared_ptr<Texture2D>> texture;
     std::vector<std::string> texturename;
@@ -59,8 +53,7 @@ private:
     // 物体清单，分别录入了模型纹理以及对应的Shader
     ObjectList _objectlist;
     TextureList _texturelist;
-    LightList _lightlist;
-    
+
     std::unique_ptr<DirectionalLight> _directionlight;
     std::unique_ptr<PerspectiveCamera> _camera;
     std::unique_ptr<SkyBox> _skybox;
@@ -76,6 +69,21 @@ private:
     std::shared_ptr<GLSLProgram> _omnidirectionalShader;
     std::shared_ptr<GLSLProgram> _lightCubeShader;
 
+    std::shared_ptr<GLSLProgram> _gbufferShader;
+    std::shared_ptr<GLSLProgram> _ssrShader;
+
+    // SSR resources
+    std::unique_ptr<Framebuffer> _depthfbo;
+    std::unique_ptr<Framebuffer> _gbufferfbo;
+
+    std::unique_ptr<DataTexture> _depthmap;
+    std::unique_ptr<DataTexture> _depthgbuffer;
+    std::unique_ptr<DataTexture> _normaltexture;
+    std::unique_ptr<DataTexture> _visibilitytexture;
+    std::unique_ptr<DataTexture> _positiontexture;
+    std::unique_ptr<DataTexture> _diffusetexuture;
+    std::unique_ptr<DataTexture> _depthtexture;
+
     enum ShadowRenderMode _ShadowRenderMode=ShadowRenderMode::None;
     enum ScreenShotMode _ScreenShotMode=ScreenShotMode::Normal;
     enum CameraMode _CameraMode=CameraMode::FPS;
@@ -85,19 +93,13 @@ private:
     bool series_flag=false;
     const float _cameraMoveSpeed = 10.0f;
     const float cameraRotateSpeed = 0.1f;
-    const float near_plane = 0.1f;
-    const float far_plane = 100.0f;
 
     const unsigned int _shadowWidth = 1024, _shadowHeight = 1024;
-    unsigned int depthMapFBO;
-    unsigned int depthMap;
-    GLuint pointDepthMapFBO;
-    GLuint depthCubemap;
 
     void initShader();
 
     void drawList();
-    void drawLight();
+    void debugShadowMap(float near_plane, float far_plane);
     bool addTexture(const std::string filename,const std::string name);
     bool addModel(const std::string filename,const std::string name);
 
