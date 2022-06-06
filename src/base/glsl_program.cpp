@@ -42,6 +42,12 @@ void GLSLProgram::attachVertexShader(const std::string& code) {
     _vertexShaders.push_back(vertexShader);
 }
 
+void GLSLProgram::attachGeometryShader(const std::string& code) {
+    GLuint geometryShader = createShader(code, GL_GEOMETRY_SHADER);
+    glAttachShader(_handle, geometryShader);
+    _vertexShaders.push_back(geometryShader);
+}
+
 void GLSLProgram::attachFragmentShader(const std::string& code) {
     GLuint fragmentShader = createShader(code, GL_FRAGMENT_SHADER);
     glAttachShader(_handle, fragmentShader);
@@ -56,6 +62,11 @@ void GLSLProgram::attachVertexShaderFromFile(const std::string& filePath) {
 void GLSLProgram::attachFragmentShaderFromFile(const std::string& filePath) {
     const std::string& code = readFile(filePath);
     attachFragmentShader(code);
+}
+
+void GLSLProgram::attachGeometryShaderFromFile(const std::string& filePath) {
+    const std::string& code = readFile(filePath);
+    attachGeometryShader(code);
 }
 
 void GLSLProgram::setTransformFeedbackVaryings(

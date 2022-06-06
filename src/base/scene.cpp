@@ -92,28 +92,39 @@ void Scene::initShader(){
 	_pbrShader->link();
 
     _shadowShader.reset(new GLSLProgram);
-    _shadowShader->attachVertexShaderFromFile("../../src/shaders/Shadowvs.glsl");
-    _shadowShader->attachFragmentShaderFromFile("../../src/shaders/Shadowfs.glsl");
+    _shadowShader->attachVertexShaderFromFile("../../src/shaders/ShadowShader/Shadowvs.glsl");
+    _shadowShader->attachFragmentShaderFromFile("../../src/shaders/ShadowShader/Shadowfs.glsl");
     _shadowShader->link();
 
     _shadowMappingShader.reset(new GLSLProgram);
-    _shadowMappingShader->attachVertexShaderFromFile("../../src/shaders/ShadowMappingvs.glsl");
-    _shadowMappingShader->attachFragmentShaderFromFile("../../src/shaders/ShadowMappingfs.glsl");
+    _shadowMappingShader->attachVertexShaderFromFile("../../src/shaders/ShadowShader/ShadowMappingvs.glsl");
+    _shadowMappingShader->attachFragmentShaderFromFile("../../src/shaders/ShadowShader/ShadowMappingfs.glsl");
     _shadowMappingShader->link();
 
     _pcfShader.reset(new GLSLProgram);
-    _pcfShader->attachVertexShaderFromFile("../../src/shaders/ShadowMappingvs.glsl");
-    _pcfShader->attachFragmentShaderFromFile("../../src/shaders/PCFfs.glsl");
+    _pcfShader->attachVertexShaderFromFile("../../src/shaders/ShadowShader/ShadowMappingvs.glsl");
+    _pcfShader->attachFragmentShaderFromFile("../../src/shaders/ShadowShader/PCFfs.glsl");
     _pcfShader->link();
 
     _pcssShader.reset(new GLSLProgram);
-    _pcssShader->attachVertexShaderFromFile("../../src/shaders/ShadowMappingvs.glsl");
-    _pcssShader->attachFragmentShaderFromFile("../../src/shaders/PCSSfs.glsl");
+    _pcssShader->attachVertexShaderFromFile("../../src/shaders/ShadowShader/ShadowMappingvs.glsl");
+    _pcssShader->attachFragmentShaderFromFile("../../src/shaders/ShadowShader/PCSSfs.glsl");
     _pcssShader->link();
-    
+
+    _pointShadowShader.reset(new GLSLProgram);
+    _pointShadowShader->attachVertexShaderFromFile("../../src/shaders/ShadowShader/PointShadowsvs.glsl");
+    _pointShadowShader->attachGeometryShaderFromFile("../../src/shaders/ShadowShader/PointShadowsgs.glsl");
+    _pointShadowShader->attachFragmentShaderFromFile("../../src/shaders/ShadowShader/PointShadowsfs.glsl");
+    _pointShadowShader->link();
+
+    _omnidirectionalShader.reset(new GLSLProgram);
+    _omnidirectionalShader->attachVertexShaderFromFile("../../src/shaders/ShadowShader/OmnidirectionalShadowvs.glsl");
+    _omnidirectionalShader->attachFragmentShaderFromFile("../../src/shaders/ShadowShader/OmnidirectionalShadowfs.glsl");
+    _omnidirectionalShader->link();
+
     _lightCubeShader.reset(new GLSLProgram);
-    _lightCubeShader->attachVertexShaderFromFile("../../src/shaders/LightCubevs.glsl");
-    _lightCubeShader->attachFragmentShaderFromFile("../../src/shaders/LightCubefs.glsl");
+    _lightCubeShader->attachVertexShaderFromFile("../../src/shaders/ShadowShader/LightCubevs.glsl");
+    _lightCubeShader->attachFragmentShaderFromFile("../../src/shaders/ShadowShader/LightCubefs.glsl");
     _lightCubeShader->link();
 
     _gbufferShader.reset(new GLSLProgram);

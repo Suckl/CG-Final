@@ -64,7 +64,11 @@ private:
     std::shared_ptr<GLSLProgram> _shadowMappingShader;
     std::shared_ptr<GLSLProgram> _pcfShader;
     std::shared_ptr<GLSLProgram> _pcssShader;
+
+    std::shared_ptr<GLSLProgram> _pointShadowShader;
+    std::shared_ptr<GLSLProgram> _omnidirectionalShader;
     std::shared_ptr<GLSLProgram> _lightCubeShader;
+
     std::shared_ptr<GLSLProgram> _gbufferShader;
     std::shared_ptr<GLSLProgram> _ssrShader;
 
@@ -90,7 +94,7 @@ private:
     const float _cameraMoveSpeed = 10.0f;
     const float cameraRotateSpeed = 0.1f;
 
-    const unsigned int _shadowWidth = 1024, _shadowHeight = 1024;
+    const unsigned int _shadowWidth = 2048, _shadowHeight = 2048;
 
     void initShader();
 
