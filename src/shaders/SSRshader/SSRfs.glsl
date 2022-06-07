@@ -32,7 +32,7 @@ vec4 pack (float depth) {
 float unpack(vec4 rgbaDepth) {
     const vec4 bitShift = vec4(1.0, 1.0/256.0, 1.0/(256.0*256.0), 1.0/(256.0*256.0*256.0));
     float depth =dot(rgbaDepth, bitShift);
-    if(abs(depth)<1e-3){
+    if(abs(depth)<1e-5){
       depth=1.0;
     }
     return  depth;
@@ -92,7 +92,7 @@ vec3 PBRcolor(vec3 wi,vec3 wo,vec2 uv)
     vec3 H = normalize(V + L);
     float NdotL = max(dot(N, L), 0.0); 
 
-    vec3 radiance = uLightRadiance;
+    // vec3 radiance = uLightRadiance;
 
     float NDF = DistributionGGX(N, H, uRoughness);   
     float G   = GeometrySmith(N, V, L, uRoughness); 
@@ -102,8 +102,8 @@ vec3 PBRcolor(vec3 wi,vec3 wo,vec2 uv)
     float denominator = max((4.0 * NdotL * NdotV), 0.001);
     vec3 specular = numerator / denominator;
 
-    // Lo += (KD * albedo / PI + specular) * radiance * NdotL;
-    Lo += specular * radiance * NdotL;
+    Lo += (KD * albedo / PI + specular) * NdotL;
+    // Lo += specular * NdotL;
     // vec3 color = Lo + vec3(0.001) * texture2D(uAlbedoMap, vTextureCoord).rgb;
     vec3 color=Lo;
     // vec3 color = Lo;
@@ -151,7 +151,6 @@ vec3 SampleHemisphereCos(inout float s, out float pdf) {
 }
 
 
-
 void LocalBasis(vec3 n, out vec3 b1, out vec3 b2) {
   float sign_ = sign(n.z);
   if (n.z == 0.0) {
@@ -196,8 +195,9 @@ float GetGBufferDepth(vec2 uv) {
 }
 
 vec3 GetGBufferNormalWorld(vec2 uv) {
-  vec3 normal = texture2D(uGNormalWorld, uv).xyz;
-  return normal;
+  vec3 N = texture2D(uGNormalWorld,uv).xyz;
+  N=normalize((N-vec3(0.5))*2);
+  return N;
 }
 
 // vec3 GetGBufferPosWorld(vec2 uv) {
@@ -233,10 +233,10 @@ float visibility(vec2 uv) {
 //   return vec3(1.0);
 }
 
-#define INIT_STEP 1.2
-#define MAX_STEPS 20
-#define EPS 1e-3
-#define THRES 0.5
+#define INIT_STEP 0.8
+#define MAX_STEPS 35
+#define EPS 1e-5
+#define THRES 0.001
 bool outScreen(vec3 pos){
   vec2 uv = GetScreenCoordinate(pos);
   if((vWorldToScreen*vec4(pos,1.0)).z < 0.0) return true;
@@ -296,9 +296,11 @@ vec3 SampleHemisphereGGX(inout float s, out float pdf,vec2 uv,vec3 V){
 
     float d = ( CosTheta * a2 - CosTheta ) * CosTheta + 1;
     float D = a2 / ( PI*d*d );
+    vec3 b1,b2;
+    LocalBasis(GetGBufferNormalWorld(uv),b1,b2);
+    H=H.x*b1+H.y*b2+H.z*GetGBufferNormalWorld(uv);
     vec3 L=normalize(H * 2.0f * dot(V, H) - V);
-    pdf = D * CosTheta;
-
+    pdf = D * CosTheta / (4 * dot (V,H));
     return L;
 }
 
@@ -307,35 +309,26 @@ vec3 SampleHemisphereGGX(inout float s, out float pdf,vec2 uv,vec3 V){
 void main() {
   float s = InitRand(gl_FragCoord.xy);
   vec2 uv=GetScreenCoordinate(vPosWorld.xyz);
-  vec3 CameraDir=-normalize(vPosWorld.xyz-uCameraPos);
-  
+  // vec3 CameraDir=-normalize(vPosWorld.xyz-uCameraPos);
+  vec3 CameraDir = normalize(uCameraPos - vPosWorld.xyz);
+  vec3 N = GetGBufferNormalWorld(uv);
   vec3 L = vec3(0.0);
-  L = visibility(uv)*PBRcolor(uLightDir,CameraDir,uv);
+  L = visibility(uv)*PBRcolor(uLightDir,CameraDir,uv)*uLightRadiance;
   vec3 L_indirect = vec3(0.0);
-  // uniform
   for(int i=0;i<SAMPLE_NUM;i++){
     float pdf=0.0;
-    vec3 b1,b2;
-    // vec3 dir=SampleHemisphereCos(s,pdf);
-    vec3 dir=SampleHemisphereGGX(s,pdf,uv,CameraDir);
-    // vec3 dir=SampleHemisphereUniform(s,pdf);
-    LocalBasis(GetGBufferNormalWorld(uv),b1,b2);
-    dir=dir.x*b1+dir.y*b2+dir.z*GetGBufferNormalWorld(uv);
+    vec3 dir;
+    dir=SampleHemisphereGGX(s,pdf,uv,CameraDir);
     vec3 hit=vec3(0.0);
     if(RayMarch(vPosWorld.xyz,dir,hit)){
-      vec3 l=PBRcolor(dir,CameraDir,uv)*PBRcolor(uLightDir,-dir,GetScreenCoordinate(hit))*visibility(GetScreenCoordinate(hit))*uLightRadiance/pdf;
-      // vec3 l=PBRcolor(dir,CameraDir,uv)*PBRcolor(uLightDir,dir,GetScreenCoordinate(hit))*uLightRadiance/pdf;
+      vec3 l=PBRcolor(dir,CameraDir,uv) * PBRcolor(uLightDir,-dir,GetScreenCoordinate(hit))
+            * visibility(GetScreenCoordinate(hit)) * uLightRadiance / pdf;
       L_indirect=L_indirect+l;
-      // L_indirect+=PBRcolor(uLightDir,dir,GetScreenCoordinate(hit));
-      // L_indirect=vec3(20.0);
     }
   }
   L_indirect=L_indirect/float (SAMPLE_NUM);
   L=L+L_indirect;
-  // L=L_indirect;
   vec3 color = L / (L + vec3(1.0));
   color = pow(clamp(L, vec3(0.0), vec3(1.0)), vec3(1.0 / 2.2));
   gl_FragColor = vec4(vec3(color.rgb), 1.0);
-  // gl_FragColor = vec4(vec3(GetDepth(vPosWorld.xyz)),1.0);
-  // gl_FragColor = vec4(vec3(GetGBufferDepth(uv)),1.0);
 }
