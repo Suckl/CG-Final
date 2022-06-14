@@ -67,7 +67,7 @@ Scene::Scene(const Options& options): Application(options) {
     _colortexture.reset(new DataTexture(GL_RGBA, _windowWidth, _windowHeight, GL_RGBA, GL_FLOAT));
     _diffusetexuture.reset(new DataTexture(GL_RGBA, _windowWidth, _windowHeight, GL_RGBA, GL_FLOAT));
     _depthtexture.reset(new DataTexture(GL_RGBA, _windowWidth, _windowHeight, GL_RGBA, GL_FLOAT));
-    _positiontexture.reset(new DataTexture(GL_RGBA, _windowWidth, _windowHeight, GL_RGBA, GL_FLOAT));
+    _positiontexture.reset(new DataTexture(GL_RGBA16F, _windowWidth, _windowHeight, GL_RGBA, GL_FLOAT));
     _depthgbuffer.reset(new DataTexture(GL_DEPTH_COMPONENT, _windowWidth, _windowHeight, GL_DEPTH_COMPONENT, GL_FLOAT));
     _gbufferfbo->bind();
     const GLenum bufs[6]={GL_COLOR_ATTACHMENT0,GL_COLOR_ATTACHMENT1,GL_COLOR_ATTACHMENT2,GL_COLOR_ATTACHMENT3,GL_COLOR_ATTACHMENT4,
@@ -675,25 +675,23 @@ void Scene::drawList(){
             glActiveTexture(GL_TEXTURE2);_normaltexture->bind();
             glActiveTexture(GL_TEXTURE3);_visibilitytexture->bind();
             glActiveTexture(GL_TEXTURE4);_colortexture->bind();
+            glActiveTexture(GL_TEXTURE5);_positiontexture->bind();
             _ssrShader->setInt("uGDiffuse",0);
             _ssrShader->setInt("uGDepth",1);
             _ssrShader->setInt("uGNormalWorld",2);
             _ssrShader->setInt("uGShadow",3);
             _ssrShader->setInt("uGColor",4);
-            // _ssrShader->setInt("uAlbedoMap",4);
-            for(int i = 0; i < _objectlist.ModelList.size(); i++){
-                if(!_objectlist.visible[i]) continue;
-                if(series_flag && i<_serise.sequence.size() && _serise.max>-1 && _serise.sequence[i] != -1){
-                    if (_serise.sequence[i] != count/20) continue;
-                }
-                _ssrShader->setMat4("uModelMatrix", _objectlist.ModelList[i]->getModelMatrix());
-                _objectlist.ModelList[i]->draw();
-            }
+            _ssrShader->setInt("uGPosition",5);
+            _ssrShader->setInt("Width",_windowWidth);
+            _ssrShader->setInt("Height",_windowHeight);
+            _fullscrennquad->draw();
+            _skybox->draw(projection, view);
             glActiveTexture(GL_TEXTURE0);_diffusetexuture->unbind();
             glActiveTexture(GL_TEXTURE1);_depthtexture->unbind();
             glActiveTexture(GL_TEXTURE2);_normaltexture->unbind();
             glActiveTexture(GL_TEXTURE3);_visibilitytexture->unbind();
             glActiveTexture(GL_TEXTURE4);_colortexture->unbind();
+            glActiveTexture(GL_TEXTURE5);_positiontexture->unbind();
         }
         break;
     
@@ -776,25 +774,24 @@ void Scene::drawList(){
             glActiveTexture(GL_TEXTURE2);_normaltexture->bind();
             glActiveTexture(GL_TEXTURE3);_visibilitytexture->bind();
             glActiveTexture(GL_TEXTURE4);_colortexture->bind();
+            glActiveTexture(GL_TEXTURE5);_positiontexture->bind();
             _ssrShader->setInt("uGDiffuse",0);
             _ssrShader->setInt("uGDepth",1);
             _ssrShader->setInt("uGNormalWorld",2);
             _ssrShader->setInt("uGShadow",3);
             _ssrShader->setInt("uGColor",4);
-            for(int i = 0; i < _objectlist.ModelList.size(); i++){
-                if(!_objectlist.visible[i]) continue;
-                if(series_flag && i<_serise.sequence.size() && _serise.max>-1 && _serise.sequence[i] != -1){
-                    if (_serise.sequence[i] != count/20) continue;
-                }
-                _ssrShader->setMat4("uModelMatrix", _objectlist.ModelList[i]->getModelMatrix());
-                _objectlist.ModelList[i]->draw();
-            }
+            _ssrShader->setInt("uGPosition",5);
+            _ssrShader->setInt("Width",_windowWidth);
+            _ssrShader->setInt("Height",_windowHeight);
+            _fullscrennquad->draw();
             _skybox->draw(projection, view);
+            
             glActiveTexture(GL_TEXTURE0);_diffusetexuture->unbind();
             glActiveTexture(GL_TEXTURE1);_depthtexture->unbind();
             glActiveTexture(GL_TEXTURE2);_normaltexture->unbind();
             glActiveTexture(GL_TEXTURE3);_visibilitytexture->unbind();
             glActiveTexture(GL_TEXTURE4);_colortexture->unbind();
+            glActiveTexture(GL_TEXTURE5);_positiontexture->unbind();
             
             _filterfbo->unbind();
 

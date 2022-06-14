@@ -7,13 +7,13 @@ uniform sampler2D uGDepth;
 uniform sampler2D uGNormalWorld;
 uniform sampler2D uGShadow;
 uniform sampler2D uGColor;
+uniform sampler2D uGPosition;
+uniform int Width;
+uniform int Height;
 // uniform sampler2D uAlbedoMap;
 uniform vec3 uColor;
 
 in mat4 vWorldToScreen;
-in highp vec4 vPosWorld;
-in vec2 vTextureCoord;
-in vec3 vNormal;
 
 #define PI 3.1415926535897932384626433832795
 #define M_PI 3.1415926535897932384626433832795
@@ -70,14 +70,9 @@ vec3 PBRcolor(vec3 wi,vec3 wo,vec2 uv)
     vec3 Diffuse = texture2D(uGDiffuse,uv).xyz;
     float uRoughness = Diffuse.x;
     float uMetallic = Diffuse.y;
-    // vec3 albedo = pow(texture2D(uAlbedoMap, vTextureCoord).rgb, vec3(2.2));
-    // if(albedo==vec3(0.0)) albedo=uColor;
     vec3 albedo=texture2D(uGColor,uv).xyz;
-    // vec3 albedo=uColor;
     vec3 N = texture2D(uGNormalWorld,uv).xyz;
     N=normalize((N-vec3(0.5))*2);
-    // vec3 N=normalize(vNormal);
-    // return N;
     vec3 V = normalize(wo);
     float NdotV = max(dot(N, V), 0.0);
     vec3 F0 = vec3(0.04); 
@@ -92,8 +87,6 @@ vec3 PBRcolor(vec3 wi,vec3 wo,vec2 uv)
     vec3 H = normalize(V + L);
     float NdotL = max(dot(N, L), 0.0); 
 
-    // vec3 radiance = uLightRadiance;
-
     float NDF = DistributionGGX(N, H, uRoughness);   
     float G   = GeometrySmith(N, V, L, uRoughness); 
     vec3 F = fresnelSchlick(F0, V, H);
@@ -103,11 +96,7 @@ vec3 PBRcolor(vec3 wi,vec3 wo,vec2 uv)
     vec3 specular = numerator / denominator;
 
     Lo += (KD * albedo / PI + specular) * NdotL;
-    // Lo += specular * NdotL;
-    // vec3 color = Lo + vec3(0.001) * texture2D(uAlbedoMap, vTextureCoord).rgb;
     vec3 color=Lo;
-    // vec3 color = Lo;
-    // color = color / (color + vec3(1.0));
     return color;
 }
 
@@ -183,6 +172,10 @@ float GetDepth(vec3 posWorld) {
 vec2 GetScreenCoordinate(vec3 posWorld) {
   vec2 uv = Project(vWorldToScreen * vec4(posWorld, 1.0)).xy * 0.5 + 0.5;
   return uv;
+}
+
+vec3 GetvPosWorld(vec2 uv){
+  return texture2D(uGPosition,uv).xyz;
 }
 
 float GetGBufferDepth(vec2 uv) {
@@ -308,9 +301,9 @@ vec3 SampleHemisphereGGX(inout float s, out float pdf,vec2 uv,vec3 V){
 
 void main() {
   float s = InitRand(gl_FragCoord.xy);
-  vec2 uv=GetScreenCoordinate(vPosWorld.xyz);
-  // vec3 CameraDir=-normalize(vPosWorld.xyz-uCameraPos);
-  vec3 CameraDir = normalize(uCameraPos - vPosWorld.xyz);
+  vec2 uv= vec2(1.0*gl_FragCoord.x/(1.0*Width),1.0*gl_FragCoord.y/(1.0*Height));
+  if (GetvPosWorld(uv) == vec3(0.0)) discard;
+  vec3 CameraDir = normalize(uCameraPos - GetvPosWorld(uv));
   vec3 N = GetGBufferNormalWorld(uv);
   vec3 L = vec3(0.0);
   L = visibility(uv)*PBRcolor(uLightDir,CameraDir,uv)*uLightRadiance;
@@ -320,7 +313,7 @@ void main() {
     vec3 dir;
     dir=SampleHemisphereGGX(s,pdf,uv,CameraDir);
     vec3 hit=vec3(0.0);
-    if(RayMarch(vPosWorld.xyz,dir,hit)){
+    if(RayMarch(GetvPosWorld(uv),dir,hit)){
       vec3 l=PBRcolor(dir,CameraDir,uv) * PBRcolor(uLightDir,-dir,GetScreenCoordinate(hit))
             * visibility(GetScreenCoordinate(hit)) * uLightRadiance / pdf;
       L_indirect=L_indirect+l;
