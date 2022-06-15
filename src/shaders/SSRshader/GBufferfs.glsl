@@ -106,6 +106,14 @@ float PCF(sampler2D shadowMap, vec4 coords) {
     return shadow;
 }
 
+vec4 pack (float depth) {
+    const vec4 bitShift = vec4(1.0, 256.0, 256.0 * 256.0, 256.0 * 256.0 * 256.0);
+    const vec4 bitMask = vec4(1.0/256.0, 1.0/256.0, 1.0/256.0, 0.0);
+    vec4 rgbaDepth = fract(depth * bitShift);
+    rgbaDepth -= rgbaDepth.gbaa * bitMask;
+    return rgbaDepth;
+}
+
 // vec3 ApplyTangentNormalMap() {
 //   vec3 t, b;
 //   LocalBasis(vNormalWorld, t, b);
@@ -122,11 +130,14 @@ void main(void) {
   //diffuse 
   gl_FragData[0] = vec4(roughness,metallic,1.0, 1.0);
   //depth
-  gl_FragData[1] = vec4(vec3(vDepth), 1.0);
+  // gl_FragData[1] = vec4(vec3(vDepth*0.1), 1.0);
+  gl_FragData[1] = pack((gl_FragCoord.z));
   //normal
   gl_FragData[2] = vec4(vNormalWorld*0.5+vec3(0.5), 1.0);
   //visible
   gl_FragData[3] = vec4(vec3(PCF(uShadowMap,vec4(shadowCoord,1.0))), 1.0);
   //color
   gl_FragData[4] = vec4(albedo, 1.0);
+  // position
+  gl_FragData[5] = vec4(vPosWorld.xyz,1.0);
 }

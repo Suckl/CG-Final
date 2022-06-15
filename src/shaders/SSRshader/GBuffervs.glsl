@@ -14,7 +14,7 @@ out mat4 vWorldToLight;
 out vec2 vTextureCoord;
 out vec3 vNormalWorld;
 out vec4 vPosWorld;
-out float vDepth;
+out highp float vDepth;
 out vec4 vPositionFromLight;
 
 void main(void) {
@@ -29,5 +29,7 @@ void main(void) {
   vPositionFromLight = uLightVP * vec4(vFragPos, 1.0);
 
   gl_Position = uProjectionMatrix * uViewMatrix * uModelMatrix * vec4(aPosition, 1.0);
-  vDepth = gl_Position.w;
+  // vDepth = gl_Position.w;
+  // vDepth = gl_Position.z;
+  // vDepth = gl_FragCoord.z;
 }

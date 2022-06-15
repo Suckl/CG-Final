@@ -9,9 +9,12 @@
 #include <imgui_impl_opengl3.h>
 #include"application.h"
 #include"framebuffer.h"
+#include"fullscreen_quad.h"
+
+#include "PathTracingResources.h"
 
 enum class ShadowRenderMode {
-	None,ShadowMapping, PCF, PCSS,SSR
+	None,ShadowMapping, PCF, PCSS, SSR, SSR_Filter, Path_Tracing
 };
 
 enum class ScreenShotMode {
@@ -40,13 +43,6 @@ struct TextureList{
     std::vector<std::string> filepath;
 };
 
-struct LightList{
-    std::vector<bool> visible;//可见性
-    std::vector<std::unique_ptr<Model>> ModelList;//物体模型
-    std::vector<glm::vec3> Color;//颜色坐标
-    std::vector<std::string> filepath;//保存用
-};
-
 struct Serise{
     std::vector<int> sequence;
     int max;
@@ -60,7 +56,6 @@ private:
     // 物体清单，分别录入了模型纹理以及对应的Shader
     ObjectList _objectlist;
     TextureList _texturelist;
-    LightList _lightlist;
 
     std::unique_ptr<DirectionalLight> _directionlight;
     std::unique_ptr<PerspectiveCamera> _camera;
@@ -79,18 +74,46 @@ private:
 
     std::shared_ptr<GLSLProgram> _gbufferShader;
     std::shared_ptr<GLSLProgram> _ssrShader;
+    std::shared_ptr<GLSLProgram> _filterShader;
 
     // SSR resources
     std::unique_ptr<Framebuffer> _depthfbo;
     std::unique_ptr<Framebuffer> _gbufferfbo;
+    std::unique_ptr<Framebuffer> _filterfbo;
 
     std::unique_ptr<DataTexture> _depthmap;
     std::unique_ptr<DataTexture> _depthgbuffer;
+    std::unique_ptr<DataTexture> _depthfilter;
     std::unique_ptr<DataTexture> _normaltexture;
     std::unique_ptr<DataTexture> _visibilitytexture;
-    std::unique_ptr<DataTexture> _positiontexture;
+    std::unique_ptr<DataTexture> _colortexture;
     std::unique_ptr<DataTexture> _diffusetexuture;
     std::unique_ptr<DataTexture> _depthtexture;
+    std::unique_ptr<DataTexture> _positiontexture;
+    std::unique_ptr<DataTexture> _beauty;
+    std::unique_ptr<FullscreenQuad> _fullscrennquad;
+
+    // Path Tracing resources
+    std::vector<Triangle> triangles;
+    BVHNode bvhNode;
+    std::vector<Triangle_encoded> triangles_encoded;
+    std::vector<BVHNode_encoded> nodes_encoded;
+
+    GLuint _trianglesTextureBuffer;
+    GLuint _nodesTextureBuffer;
+    GLuint _lastFrame;
+
+    RenderPass pass1;
+    RenderPass pass2;
+    RenderPass pass3;
+
+    std::unique_ptr<Framebuffer> _pathTracingfbo;
+    std::unique_ptr<Framebuffer> _pass2fbo;
+    std::unique_ptr<Framebuffer> _pass3fbo;
+
+    clock_t t1, t2;
+    double dt, fps;
+    unsigned int frameCounter = 0;
 
     enum ShadowRenderMode _ShadowRenderMode=ShadowRenderMode::None;
     enum ScreenShotMode _ScreenShotMode=ScreenShotMode::Normal;
@@ -101,15 +124,15 @@ private:
     bool series_flag=false;
     const float _cameraMoveSpeed = 10.0f;
     const float cameraRotateSpeed = 0.1f;
-    const float near_plane = 0.1f;
-    const float far_plane = 233.0f;
 
-    const unsigned int _shadowWidth = 1024, _shadowHeight = 1024;
+    const unsigned int _shadowWidth = 2048, _shadowHeight = 2048;
 
     void initShader();
+    void initPathTracingResources();
+    void initPathTracingModel(int index, Material m);
 
     void drawList();
-    void drawLight();
+    void debugShadowMap(float near_plane, float far_plane);
     bool addTexture(const std::string filename,const std::string name);
     bool addModel(const std::string filename,const std::string name);
 
@@ -131,4 +154,6 @@ private:
     void AddPrism(float r,float h,std::string name,int sides);
     void AddFrustum(float r1,float r2,float h,std::string name,int sides);
     void AddCone(float r,float h,std::string name);
+
+    void PathTracing();
 };

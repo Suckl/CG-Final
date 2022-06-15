@@ -1,6 +1,7 @@
 
 #include"scene.h"
 #include"global.h"
+#include "baseFunc.h"
 
 const std::string modelPath = "../media/sphere.obj";
 const std::string earthTexturePath = "../media/earthmap.jpg";
@@ -35,23 +36,17 @@ Scene::Scene(const Options& options): Application(options) {
 	_directionlight.reset(new DirectionalLight());
     _directionlight->position =glm::vec3(2.33f, 20.0f, 5.0f);
 
-    const std::string lightCubePath = "../media/sphere.obj";
-    _lightlist.ModelList.push_back(nullptr);
-    _lightlist.ModelList[0].reset(new Model(lightCubePath));
-    _lightlist.filepath.push_back(lightCubePath);
-    _lightlist.visible.push_back(true);
-    _lightlist.Color.push_back(glm::vec3(1.0));
-    _lightlist.ModelList[0]->position = _directionlight->position;
-    _lightlist.ModelList[0]->scale = glm::vec3(0.3f);
-
 	// init skybox
 	_skybox.reset(new SkyBox(skyboxTexturePaths));
     // init Series
     _serise.max=0;
-
+    // init fullscreen
+    _fullscrennquad.reset(new FullscreenQuad);
 
 	// init shaders
     initShader();
+
+    initPathTracingResources();
 
 	// init imgui
 	IMGUI_CHECKVERSION();
@@ -71,20 +66,32 @@ Scene::Scene(const Options& options): Application(options) {
     _gbufferfbo.reset(new Framebuffer);
     _normaltexture.reset(new DataTexture(GL_RGBA, _windowWidth, _windowHeight, GL_RGBA, GL_FLOAT));
     _visibilitytexture.reset(new DataTexture(GL_RGBA, _windowWidth, _windowHeight, GL_RGBA, GL_FLOAT));
-    _positiontexture.reset(new DataTexture(GL_RGBA, _windowWidth, _windowHeight, GL_RGBA, GL_FLOAT));
+    _colortexture.reset(new DataTexture(GL_RGBA, _windowWidth, _windowHeight, GL_RGBA, GL_FLOAT));
     _diffusetexuture.reset(new DataTexture(GL_RGBA, _windowWidth, _windowHeight, GL_RGBA, GL_FLOAT));
     _depthtexture.reset(new DataTexture(GL_RGBA, _windowWidth, _windowHeight, GL_RGBA, GL_FLOAT));
+    _positiontexture.reset(new DataTexture(GL_RGBA16F, _windowWidth, _windowHeight, GL_RGBA, GL_FLOAT));
     _depthgbuffer.reset(new DataTexture(GL_DEPTH_COMPONENT, _windowWidth, _windowHeight, GL_DEPTH_COMPONENT, GL_FLOAT));
     _gbufferfbo->bind();
-    const GLenum bufs[5]={GL_COLOR_ATTACHMENT0,GL_COLOR_ATTACHMENT1,GL_COLOR_ATTACHMENT2,GL_COLOR_ATTACHMENT3,GL_COLOR_ATTACHMENT4};
-    glDrawBuffers(5,bufs);
+    const GLenum bufs[6]={GL_COLOR_ATTACHMENT0,GL_COLOR_ATTACHMENT1,GL_COLOR_ATTACHMENT2,GL_COLOR_ATTACHMENT3,GL_COLOR_ATTACHMENT4,
+                        GL_COLOR_ATTACHMENT5};
+    glDrawBuffers(6,bufs);
     _gbufferfbo->attach(*_diffusetexuture,GL_COLOR_ATTACHMENT0);
     _gbufferfbo->attach(*_depthgbuffer,GL_DEPTH_ATTACHMENT);
     _gbufferfbo->attach(*_depthtexture,GL_COLOR_ATTACHMENT1);
     _gbufferfbo->attach(*_normaltexture,GL_COLOR_ATTACHMENT2);
     _gbufferfbo->attach(*_visibilitytexture,GL_COLOR_ATTACHMENT3);
-    _gbufferfbo->attach(*_positiontexture,GL_COLOR_ATTACHMENT4);
+    _gbufferfbo->attach(*_colortexture,GL_COLOR_ATTACHMENT4);
+    _gbufferfbo->attach(*_positiontexture,GL_COLOR_ATTACHMENT5);
     _gbufferfbo->unbind();
+    // init filterFBO
+    _filterfbo.reset(new Framebuffer);
+    _beauty.reset(new DataTexture(GL_RGBA, _windowWidth, _windowHeight, GL_RGBA, GL_FLOAT));
+    _depthfilter.reset(new DataTexture(GL_DEPTH_COMPONENT, _windowWidth, _windowHeight, GL_DEPTH_COMPONENT, GL_FLOAT));
+    _filterfbo->bind();
+    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+    _filterfbo->attach(*_beauty,GL_COLOR_ATTACHMENT0);
+    _filterfbo->attach(*_depthfilter,GL_DEPTH_ATTACHMENT);
+    _filterfbo->unbind();
 }
 
 Scene::~Scene() {
@@ -144,6 +151,164 @@ void Scene::initShader(){
     _ssrShader->attachVertexShaderFromFile("../../src/shaders/SSRshader/SSRvs.glsl");
     _ssrShader->attachFragmentShaderFromFile("../../src/shaders/SSRshader/SSRfs.glsl");
     _ssrShader->link();
+
+    _filterShader.reset(new GLSLProgram);
+    _filterShader->attachVertexShaderFromFile("../../src/shaders/SSRshader/Filtervs.glsl");
+    _filterShader->attachFragmentShaderFromFile("../../src/shaders/SSRshader/Filterfs.glsl");
+    _filterShader->link();
+
+}
+
+void Scene::initPathTracingModel(int index, Material m) {
+    auto vertices = _objectlist.ModelList[index]->_vertices;
+    auto indices = _objectlist.ModelList[index]->_indices;
+
+    mat4 model = _objectlist.ModelList[index]->getModelMatrix();
+    mat4 view = _camera->getViewMatrix();
+    mat4 projection = _camera->getProjectionMatrix();
+    for(auto& v : vertices) {
+        v.position = projection * view * model * glm::vec4(v.position, 1.0f);
+    }
+
+    // 构建 Triangle 对象数组
+    int offset = triangles.size();  // 增量更新
+    triangles.resize(offset + indices.size() / 3);
+    for (int i = 0; i < indices.size(); i += 3) {
+        Triangle& t = triangles[offset + i / 3];
+        // 传顶点属性
+        t.p1 = vertices[indices[i]].position;
+        t.p2 = vertices[indices[i + 1]].position;
+        t.p3 = vertices[indices[i + 2]].position;
+
+        t.n1 = vertices[indices[i]].normal;
+        t.n2 = vertices[indices[i + 1]].normal;
+        t.n3 = vertices[indices[i + 2]].normal;
+
+        // 传材质
+        t.material = m;
+    }
+}
+
+void Scene::initPathTracingResources() {
+    Material m;
+    m.baseColor = vec3(1, 1, 1);
+    // for(int i = 0; i < _objectlist.ModelList.size(); ++i){
+    //     if(i == 0)
+    //         m.emissive = vec3(30, 20, 10);
+    //     else
+    //         m.emissive = vec3(0, 0, 0);
+    //     initPathTracingModel(i, m);
+    // }
+    m.emissive = vec3(30, 20, 10);
+    initPathTracingModel(0, m);
+
+    m.baseColor = vec3(1, 0.5, 0.5);
+    m.roughness = 0.1;
+    m.metallic = 0.0;
+    m.clearcoat = 1.0;
+    m.subsurface = 1.0;
+    m.emissive = vec3(0, 0, 0);
+    initPathTracingModel(1, m);
+
+    m.baseColor = vec3(0.75, 0.7, 0.15);
+    m.roughness = 0.15;
+    m.metallic = 1.0;
+    m.clearcoat = 1.0;
+    initPathTracingModel(2, m);
+
+    m.baseColor = vec3(0.5, 0.5, 1);
+    m.metallic = 0.0;
+    m.roughness = 0.1;
+    m.clearcoat = 1.0;
+    initPathTracingModel(3, m);
+    initPathTracingModel(4, m);
+
+    int nTriangles = triangles.size();
+    
+    std::cout << "Loading Model Finish: " << nTriangles << " triangles" << std::endl;
+
+    bvhNode.left = 255;
+    bvhNode.right = 128;
+    bvhNode.n = 30;
+    bvhNode.AA = vec3(1, 1, 0);
+    bvhNode.BB = vec3(0, 1, 0);
+    std::vector<BVHNode> nodes{ bvhNode };
+    buildBVH(triangles, nodes, 0, triangles.size() - 1, 8);
+    int nNodes = nodes.size();
+    std::cout << "BVH Construction Finish: " << nNodes << " nodes" << std::endl;
+
+    triangles_encoded.resize(nTriangles);
+    for (int i = 0; i < nTriangles; i++) {
+        Triangle& t = triangles[i];
+        Material& m = t.material;
+        // 顶点位置
+        triangles_encoded[i].p1 = t.p1;
+        triangles_encoded[i].p2 = t.p2;
+        triangles_encoded[i].p3 = t.p3;
+        // 顶点法线
+        triangles_encoded[i].n1 = t.n1;
+        triangles_encoded[i].n2 = t.n2;
+        triangles_encoded[i].n3 = t.n3;
+        // 材质
+        triangles_encoded[i].emissive = m.emissive;
+        triangles_encoded[i].baseColor = m.baseColor;
+        triangles_encoded[i].param1 = vec3(m.subsurface, m.metallic, m.specular);
+        triangles_encoded[i].param2 = vec3(m.specularTint, m.roughness, m.anisotropic);
+        triangles_encoded[i].param3 = vec3(m.sheen, m.sheenTint, m.clearcoat);
+        triangles_encoded[i].param4 = vec3(m.clearcoatGloss, m.IOR, m.transmission);
+    }
+
+    nodes_encoded.resize(nNodes);
+    for (int i = 0; i < nNodes; i++) {
+        nodes_encoded[i].childs = vec3(nodes[i].left, nodes[i].right, 0);
+        nodes_encoded[i].leafInfo = vec3(nodes[i].n, nodes[i].index, 0);
+        nodes_encoded[i].AA = nodes[i].AA;
+        nodes_encoded[i].BB = nodes[i].BB;
+    }
+    std::cout << "Encode Finish" << std::endl;
+
+    // 三角形数组
+    GLuint tbo0;
+    glGenBuffers(1, &tbo0);
+    glBindBuffer(GL_TEXTURE_BUFFER, tbo0);
+    glBufferData(GL_TEXTURE_BUFFER, triangles_encoded.size() * sizeof(Triangle_encoded), &triangles_encoded[0], GL_STATIC_DRAW);
+    glGenTextures(1, &_trianglesTextureBuffer);
+    glBindTexture(GL_TEXTURE_BUFFER, _trianglesTextureBuffer);
+    glTexBuffer(GL_TEXTURE_BUFFER, GL_RGB32F, tbo0);
+
+    // BVHNode 数组
+    GLuint tbo1;
+    glGenBuffers(1, &tbo1);
+    glBindBuffer(GL_TEXTURE_BUFFER, tbo1);
+    glBufferData(GL_TEXTURE_BUFFER, nodes_encoded.size() * sizeof(BVHNode_encoded), &nodes_encoded[0], GL_STATIC_DRAW);
+    glGenTextures(1, &_nodesTextureBuffer);
+    glBindTexture(GL_TEXTURE_BUFFER, _nodesTextureBuffer);
+    glTexBuffer(GL_TEXTURE_BUFFER, GL_RGB32F, tbo1);
+
+    pass1.program = getShaderProgram("../../src/shaders/PathTracingShader/PathTracingfs.glsl", 
+        "../../src/shaders/PathTracingShader/PathTracingvs.glsl");
+    // pass1.width = pass1.height = 256;
+    pass1.colorAttachments.push_back(getTextureRGB32F(pass1.width, pass1.height));
+    pass1.colorAttachments.push_back(getTextureRGB32F(pass1.width, pass1.height));
+    pass1.colorAttachments.push_back(getTextureRGB32F(pass1.width, pass1.height));
+    pass1.bindData();
+   
+    glUseProgram(pass1.program);
+    glUniform1i(glGetUniformLocation(pass1.program, "nTriangles"), triangles.size());
+    glUniform1i(glGetUniformLocation(pass1.program, "nNodes"), nodes.size());
+    glUniform1i(glGetUniformLocation(pass1.program, "width"), pass1.width);
+    glUniform1i(glGetUniformLocation(pass1.program, "height"), pass1.height);
+    glUseProgram(0);
+
+    pass2.program = getShaderProgram("../../src/shaders/PathTracingShader/Pass2fs.glsl", 
+        "../../src/shaders/PathTracingShader/PathTracingvs.glsl");
+    _lastFrame = getTextureRGB32F(pass2.width, pass2.height);
+    pass2.colorAttachments.push_back(_lastFrame);
+    pass2.bindData();
+
+    pass3.program = getShaderProgram("../../src/shaders/PathTracingShader/Pass3fs.glsl", 
+        "../../src/shaders/PathTracingShader/PathTracingvs.glsl");
+    pass3.bindData(true);
 }
 
 void Scene::handleInput() {
@@ -236,8 +401,6 @@ void Scene::renderFrame() {
 	// draw scene
 	drawList();
 
-    drawLight();
-
     // draw skybox
 	_skybox->draw(projection, view);
     
@@ -286,12 +449,39 @@ bool Scene::addTexture(const std::string filename,const std::string name){
     return true;
 }
 
-void Scene::drawLight() {
+void Scene::debugShadowMap(float near_plane, float far_plane) {
     _lightCubeShader->use();
-    _lightCubeShader->setMat4("projection", _camera->getProjectionMatrix());
-    _lightCubeShader->setMat4("view", _camera->getViewMatrix());
-    _lightCubeShader->setMat4("model", _lightlist.ModelList[0]->getModelMatrix());
-    _lightlist.ModelList[0]->draw();
+    _lightCubeShader->setFloat("near_plane", near_plane);
+    _lightCubeShader->setFloat("far_plane", far_plane);
+    glActiveTexture(GL_TEXTURE0);
+    _depthmap->bind();
+
+    unsigned int quadVAO = 0;
+    unsigned int quadVBO;
+
+    if (quadVAO == 0)
+    {
+        float quadVertices[] = {
+            // positions        // texture Coords
+            -1.0f,  1.0f, 0.0f, 0.0f, 1.0f,
+            -1.0f, -1.0f, 0.0f, 0.0f, 0.0f,
+            1.0f,  1.0f, 0.0f, 1.0f, 1.0f,
+            1.0f, -1.0f, 0.0f, 1.0f, 0.0f,
+        };
+        // setup plane VAO
+        glGenVertexArrays(1, &quadVAO);
+        glGenBuffers(1, &quadVBO);
+        glBindVertexArray(quadVAO);
+        glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), &quadVertices, GL_STATIC_DRAW);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
+    }
+    glBindVertexArray(quadVAO);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glBindVertexArray(0);
 }
 
 void Scene::drawList(){
@@ -336,7 +526,9 @@ void Scene::drawList(){
             glm::mat4 lightProjection, lightView, lightMatrix;
             float size = 50.0f;
             
-            lightProjection = glm::ortho(-size, size, -size, size, near_plane, far_plane);
+            lightProjection = glm::ortho(-size, size, -size, size, 0.1f, 100.0f);
+            // lightProjection =glm::perspective(glm::radians(45.0f), 1.0f,0.1f, 100.0f);
+            // lightView = glm::lookAt(lightPos, lightPos + LightList[0]->getFront(), LightList[0]->getUp());
             lightView = glm::lookAt(lightPos, glm::vec3(0.0f), glm::vec3(0.0, 1.0, 0.0));;
             lightMatrix = lightProjection * lightView;
 
@@ -414,7 +606,9 @@ void Scene::drawList(){
             glm::mat4 lightProjection, lightView, lightMatrix;
             float size = 50.0f;
             
-            lightProjection = glm::ortho(-size, size, -size, size, near_plane, far_plane);
+            lightProjection = glm::ortho(-size, size, -size, size, 0.1f, 100.0f);
+            // lightProjection =glm::perspective(glm::radians(90.0f), 1.0f,0.1f, 100.0f);
+            // lightView = glm::lookAt(lightPos, lightPos + LightList[0]->getFront(), LightList[0]->getUp());
             lightView = glm::lookAt(lightPos, glm::vec3(0.0f), glm::vec3(0.0, 1.0, 0.0));
             lightMatrix = lightProjection * lightView;
 
@@ -489,7 +683,7 @@ void Scene::drawList(){
             glm::mat4 lightProjection, lightView, lightMatrix;
             float size = 50.0f;
             
-            lightProjection = glm::ortho(-size, size, -size, size, near_plane, far_plane);
+            lightProjection = glm::ortho(-size, size, -size, size, 0.1f, 100.0f);
             //lightView = glm::lookAt(lightPos, lightPos + LightList[0]->getFront(), LightList[0]->getUp());
             lightView = glm::lookAt(lightPos, glm::vec3(0.0f), glm::vec3(0.0, 1.0, 0.0));
             lightMatrix = lightProjection * lightView;
@@ -564,7 +758,7 @@ void Scene::drawList(){
             glm::mat4 lightProjection, lightView, lightMatrix;
             float size = 50.0f;
             
-            lightProjection = glm::ortho(-size, size, -size, size, near_plane, far_plane);
+            lightProjection = glm::ortho(-size, size, -size, size, 0.1f, 100.0f);
             lightView = glm::lookAt(lightPos, glm::vec3(0.0f), glm::vec3(0.0, 1.0, 0.0));
             lightMatrix = lightProjection * lightView;
 
@@ -634,38 +828,182 @@ void Scene::drawList(){
             glActiveTexture(GL_TEXTURE1);_depthtexture->bind();
             glActiveTexture(GL_TEXTURE2);_normaltexture->bind();
             glActiveTexture(GL_TEXTURE3);_visibilitytexture->bind();
-            glActiveTexture(GL_TEXTURE4);_positiontexture->bind();
+            glActiveTexture(GL_TEXTURE4);_colortexture->bind();
+            glActiveTexture(GL_TEXTURE5);_positiontexture->bind();
             _ssrShader->setInt("uGDiffuse",0);
             _ssrShader->setInt("uGDepth",1);
             _ssrShader->setInt("uGNormalWorld",2);
             _ssrShader->setInt("uGShadow",3);
             _ssrShader->setInt("uGColor",4);
-            // _ssrShader->setInt("uAlbedoMap",4);
+            _ssrShader->setInt("uGPosition",5);
+            _ssrShader->setInt("Width",_windowWidth);
+            _ssrShader->setInt("Height",_windowHeight);
+            _fullscrennquad->draw();
+            _skybox->draw(projection, view);
+            glActiveTexture(GL_TEXTURE0);_diffusetexuture->unbind();
+            glActiveTexture(GL_TEXTURE1);_depthtexture->unbind();
+            glActiveTexture(GL_TEXTURE2);_normaltexture->unbind();
+            glActiveTexture(GL_TEXTURE3);_visibilitytexture->unbind();
+            glActiveTexture(GL_TEXTURE4);_colortexture->unbind();
+            glActiveTexture(GL_TEXTURE5);_positiontexture->unbind();
+        }
+        break;
+    
+        case ShadowRenderMode::SSR_Filter: {
+            // pass1
+            glm::vec3 lightPos = _directionlight->position;
+            glm::mat4 lightProjection, lightView, lightMatrix;
+            float size = 50.0f;
+            
+            lightProjection = glm::ortho(-size, size, -size, size, 0.1f, 100.0f);
+            lightView = glm::lookAt(lightPos, glm::vec3(0.0f), glm::vec3(0.0, 1.0, 0.0));
+            lightMatrix = lightProjection * lightView;
+
+            _shadowShader->use();
+            glViewport(0, 0, _shadowWidth, _shadowHeight);
+            _depthfbo->bind();
+            glClear(GL_DEPTH_BUFFER_BIT);
+            
+            _shadowShader->setMat4("uLightSpaceMatrix", lightMatrix);           
             for(int i = 0; i < _objectlist.ModelList.size(); i++){
                 if(!_objectlist.visible[i]) continue;
                 if(series_flag && i<_serise.sequence.size() && _serise.max>-1 && _serise.sequence[i] != -1){
                     if (_serise.sequence[i] != count/20) continue;
                 }
-                _ssrShader->setMat4("uModelMatrix", _objectlist.ModelList[i]->getModelMatrix());
-                // if(_objectlist.color_flag[i]) _ssrShader->setVec3("uColor", _objectlist.Color[i]);
-                // else _ssrShader->setVec3("uColor", glm::vec3(1.0f));
-                // if(!_objectlist.color_flag[i] && _texturelist.texture[_objectlist.TextureIndex[i]] != nullptr){
-                //     glActiveTexture(GL_TEXTURE4);
-                //     _texturelist.texture[_objectlist.TextureIndex[i]]->bind();
-                //     _objectlist.ModelList[i]->draw();
-                //     _texturelist.texture[_objectlist.TextureIndex[i]]->unbind();
-                // }
-                // else _objectlist.ModelList[i]->draw();
+                _shadowShader->setMat4("model", _objectlist.ModelList[i]->getModelMatrix());
                 _objectlist.ModelList[i]->draw();
             }
+            _depthfbo->unbind();
+            
+            // reset viewport
+            glViewport(0, 0, _windowWidth, _windowHeight);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            // pass2
+            _gbufferfbo->bind();
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            _gbufferShader->use();
+            const glm::mat4 projection = _camera->getProjectionMatrix();
+            const glm::mat4 view = _camera->getViewMatrix();
+            _gbufferShader->setMat4("uProjectionMatrix", projection);
+            _gbufferShader->setMat4("uViewMatrix", view);
+            _gbufferShader->setMat4("uLightVP",lightMatrix);
+            _gbufferShader->setVec3("uLightPos", _directionlight->position);
+            _gbufferShader->setInt("uShadowMap",0);
+            _gbufferShader->setInt("uAlbedoMap",1);
+            glEnable(GL_TEXTURE0);
+            _depthmap->bind();
+            for(int i = 0; i < _objectlist.ModelList.size(); i++){
+                if(!_objectlist.visible[i]) continue;
+                if(series_flag && i<_serise.sequence.size() && _serise.max>-1 && _serise.sequence[i] != -1){
+                    if (_serise.sequence[i] != count/20) continue;
+                }
+                _gbufferShader->setMat4("uModelMatrix", _objectlist.ModelList[i]->getModelMatrix());
+                _gbufferShader->setFloat("roughness", _objectlist.roughness[i]);
+                _gbufferShader->setFloat("metallic", _objectlist.metallic[i]);
+                if(_objectlist.color_flag[i]) _gbufferShader->setVec3("uColor", _objectlist.Color[i]);
+                else _gbufferShader->setVec3("uColor", glm::vec3(1.0f));
+                if(!_objectlist.color_flag[i] && _texturelist.texture[_objectlist.TextureIndex[i]] != nullptr){
+                    glActiveTexture(GL_TEXTURE1);
+                    _texturelist.texture[_objectlist.TextureIndex[i]]->bind();
+                    _objectlist.ModelList[i]->draw();
+                    _texturelist.texture[_objectlist.TextureIndex[i]]->unbind();
+                }
+                else _objectlist.ModelList[i]->draw();
+            }
+            _gbufferfbo->unbind();
+            glEnable(GL_TEXTURE0);
+            _depthmap->unbind();
+
+            // pass3
+            _filterfbo->bind();
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            _ssrShader->use();
+            _ssrShader->setMat4("uProjectionMatrix", projection);
+            _ssrShader->setMat4("uViewMatrix", view);
+            _ssrShader->setVec3("uLightDir", _directionlight->position);
+            _ssrShader->setVec3("uCameraPos", _camera->position);
+            _ssrShader->setVec3("uLightRadiance", _directionlight->radiance);
+            glActiveTexture(GL_TEXTURE0);_diffusetexuture->bind();
+            glActiveTexture(GL_TEXTURE1);_depthtexture->bind();
+            glActiveTexture(GL_TEXTURE2);_normaltexture->bind();
+            glActiveTexture(GL_TEXTURE3);_visibilitytexture->bind();
+            glActiveTexture(GL_TEXTURE4);_colortexture->bind();
+            glActiveTexture(GL_TEXTURE5);_positiontexture->bind();
+            _ssrShader->setInt("uGDiffuse",0);
+            _ssrShader->setInt("uGDepth",1);
+            _ssrShader->setInt("uGNormalWorld",2);
+            _ssrShader->setInt("uGShadow",3);
+            _ssrShader->setInt("uGColor",4);
+            _ssrShader->setInt("uGPosition",5);
+            _ssrShader->setInt("Width",_windowWidth);
+            _ssrShader->setInt("Height",_windowHeight);
+            _fullscrennquad->draw();
+            _skybox->draw(projection, view);
+            
             glActiveTexture(GL_TEXTURE0);_diffusetexuture->unbind();
             glActiveTexture(GL_TEXTURE1);_depthtexture->unbind();
             glActiveTexture(GL_TEXTURE2);_normaltexture->unbind();
             glActiveTexture(GL_TEXTURE3);_visibilitytexture->unbind();
-            glActiveTexture(GL_TEXTURE4);_positiontexture->unbind();
+            glActiveTexture(GL_TEXTURE4);_colortexture->unbind();
+            glActiveTexture(GL_TEXTURE5);_positiontexture->unbind();
+            
+            _filterfbo->unbind();
+
+            // pass4
+            _filterShader->use();
+            glActiveTexture(GL_TEXTURE1);_normaltexture->bind();
+            glActiveTexture(GL_TEXTURE2);_positiontexture->bind();
+            glActiveTexture(GL_TEXTURE3);_beauty->bind();
+            _filterShader->setInt("uGNormalWorld",1);
+            _filterShader->setInt("uGPosition",2);
+            _filterShader->setInt("Width",_windowWidth);
+            _filterShader->setInt("Height",_windowHeight);
+            _filterShader->setInt("uBeauty",3);
+
+
+            _fullscrennquad->draw();
+
+
+            glActiveTexture(GL_TEXTURE1);_normaltexture->unbind();
+            glActiveTexture(GL_TEXTURE2);_positiontexture->unbind();
+            glActiveTexture(GL_TEXTURE3);_beauty->unbind();
+            glActiveTexture(GL_TEXTURE0);
         }
         break;
+
+        case ShadowRenderMode::Path_Tracing: {
+            PathTracing();
+        }
     }
+}
+
+void Scene::PathTracing() {
+    vec3 viewPos = _camera->position;
+    mat4 cameraRotate = _camera->getViewMatrix();
+    cameraRotate = inverse(cameraRotate);
+
+    // 传 uniform 给 pass1
+    glUseProgram(pass1.program);
+    glUniform3fv(glGetUniformLocation(pass1.program, "viewPos"), 1, value_ptr(viewPos));
+    glUniformMatrix4fv(glGetUniformLocation(pass1.program, "cameraRotate"), 1, GL_FALSE, value_ptr(cameraRotate));
+    glUniform1ui(glGetUniformLocation(pass1.program, "frameCounter"), frameCounter++);// 传计数器用作随机种子
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_BUFFER, _trianglesTextureBuffer);
+    glUniform1i(glGetUniformLocation(pass1.program, "triangles"), 0);
+
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_BUFFER, _nodesTextureBuffer);
+    glUniform1i(glGetUniformLocation(pass1.program, "nodes"), 1);
+
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, _lastFrame);
+    glUniform1i(glGetUniformLocation(pass1.program, "lastFrame"), 2);
+
+    // 绘制
+    pass1.draw();
+    pass2.draw(pass1.colorAttachments);
+    pass3.draw(pass2.colorAttachments);
 }
 
 void Scene::drawGUI()  {
@@ -699,23 +1037,29 @@ void Scene::drawGUI()  {
         ImGui::SameLine();
         ImGui::Text("Click this to view more details");
 		ImGui::Separator();
+
         ImGui::Text("Check to open other windows");
         ImGui::Checkbox("File Control Window",&file_flags);
         ImGui::Checkbox("Object Control Window",&object_flags);
         ImGui::Checkbox("NURBS Control Window",&NURBS_flags);
         ImGui::Separator();
+
         ImGui::Text("Choose ShadowRenderMode");
         ImGui::RadioButton("None",(int *)&_ShadowRenderMode,(int)ShadowRenderMode::None);ImGui::SameLine();
         ImGui::RadioButton("ShadowMapping",(int *)&_ShadowRenderMode,(int)ShadowRenderMode::ShadowMapping);ImGui::SameLine();
         ImGui::RadioButton("PCF",(int *)&_ShadowRenderMode,(int)ShadowRenderMode::PCF);ImGui::SameLine();
         ImGui::RadioButton("PCSS",(int *)&_ShadowRenderMode,(int)ShadowRenderMode::PCSS);
-        ImGui::RadioButton("SSR",(int *)&_ShadowRenderMode,(int)ShadowRenderMode::SSR);
+        ImGui::RadioButton("SSR",(int *)&_ShadowRenderMode,(int)ShadowRenderMode::SSR);ImGui::SameLine();
+        ImGui::RadioButton("SSR_Filter",(int *)&_ShadowRenderMode,(int)ShadowRenderMode::SSR_Filter);ImGui::SameLine();
+        ImGui::RadioButton("Path_Tracing",(int *)&_ShadowRenderMode,(int)ShadowRenderMode::Path_Tracing);
         ImGui::Separator();
+
         ImGui::Text("Game Options");
         ImGui::Checkbox("Collision detect",&collision_flag);
         ImGui::RadioButton("FPS-style camera",(int *)&_CameraMode,(int)CameraMode::FPS);ImGui::SameLine();
         ImGui::RadioButton("Free camera",(int *)&_CameraMode,(int)CameraMode::Free);
         ImGui::Separator();
+
         ImGui::Text("Choose ScreenShotMode");ImGui::SameLine();
         ImGui::RadioButton("Normal",(int *)&_ScreenShotMode,(int)ScreenShotMode::Normal);ImGui::SameLine();
         ImGui::RadioButton("RayTracing",(int *)&_ScreenShotMode,(int)ScreenShotMode::RayTracing);
@@ -866,63 +1210,57 @@ void Scene::drawGUIobj(bool &flag){
             if(ImGui::TreeNode((void*)(intptr_t)i,"object %s",_objectlist.objectname[i].c_str())){
                 ImVec4 color = ImVec4(_objectlist.Color[i].x, _objectlist.Color[i].y, _objectlist.Color[i].z,1.0f);
                 const float rota_angle=0.05f;
-                float position[3] = {_objectlist.ModelList[i]->position.x,_objectlist.ModelList[i]->position.y,_objectlist.ModelList[i]->position.z};
+                float position[3]={_objectlist.ModelList[i]->position.x,_objectlist.ModelList[i]->position.y,_objectlist.ModelList[i]->position.z};
                 float scale[3] = {_objectlist.ModelList[i]->scale.x,_objectlist.ModelList[i]->scale.y,_objectlist.ModelList[i]->scale.z};
                 static char newname[128]="Type your new object name here";
-                bool color_flag =_objectlist.color_flag[i];
-                float roughness =_objectlist.roughness[i];
-                float metallic = _objectlist.metallic[i];
-                ImGui::Checkbox("Use color instead of texture", &color_flag);
-                _objectlist.color_flag[i] = color_flag;
-                ImGui::ColorEdit3("Object Color", (float*)&color);
-                _objectlist.Color[i]=glm::vec3(color.x, color.y, color.z);
-                ImGui::SliderFloat("Roughness",&roughness, 0.0f, 1.0f, "%.2f");
+                bool color_flag=_objectlist.color_flag[i];
+                float roughness=_objectlist.roughness[i];
+                float metallic=_objectlist.metallic[i];
+                ImGui::Checkbox("Use color instead of texture",&color_flag);
+                _objectlist.color_flag[i]=color_flag;
+                ImGui::ColorEdit3("Object Color",(float*)&color);
+                _objectlist.Color[i]=glm::vec3(color.x,color.y,color.z);
+                ImGui::SliderFloat("Roughness",&roughness,0.0f,1.0f,"%.2f");
                 _objectlist.roughness[i]=roughness;
-                ImGui::SliderFloat("Metallic",&metallic, 0.0f, 1.0f, "%.2f");
+                ImGui::SliderFloat("Metallic",&metallic,0.0f,1.0f,"%.2f");
                 _objectlist.metallic[i]=metallic;
-                ImGui::DragFloat3("Scale", scale, 0.005f, 0.0f, 10.0f, "%.3f");ImGui::SameLine();
+                ImGui::DragFloat3("Scale",scale,0.005f,0.0f,10.0f,"%.3f");ImGui::SameLine();
                 if(ImGui::Button("Proportional base scale.x")){
-                    scale[2] = scale[1] = scale[0];  
+                    scale[2]=scale[1]=scale[0];  
                 }
-                ImGui::DragFloat3("Position", position, 0.005f, -100.0f, 100.0f, "%.3f");
-                _objectlist.ModelList[i]->scale = glm::vec3{scale[0], scale[1], scale[2]};
-                _objectlist.ModelList[i]->position = glm::vec3{position[0], position[1], position[2]};
+                ImGui::DragFloat3("Position",position,0.005f,-100.0f,100.0f,"%.3f");
+                _objectlist.ModelList[i]->scale=glm::vec3{scale[0],scale[1],scale[2]};
+                _objectlist.ModelList[i]->position=glm::vec3{position[0],position[1],position[2]};
                 float spacing = ImGui::GetStyle().ItemInnerSpacing.x;
                 ImGui::PushButtonRepeat(true);
                 ImGui::Text("Hode to rotate:   ");ImGui::SameLine();
                 ImGui::Text("rotation-x");ImGui::SameLine();
                 if (ImGui::ArrowButton("##left", ImGuiDir_Left)) {
-                    _objectlist.ModelList[i]->rotation =glm::normalize(
-                        glm::quat{ cos(rota_angle / 2), 0.0, 1.0 * sin(rota_angle / 2),0.0 } * _objectlist.ModelList[i]->rotation);
+                    _objectlist.ModelList[i]->rotation =glm::normalize(glm::quat{ cos(rota_angle / 2),0.0,1.0*sin(rota_angle / 2),0.0 }*_objectlist.ModelList[i]->rotation);
                 }
                 ImGui::SameLine(0.0f, spacing);
                 if (ImGui::ArrowButton("##right", ImGuiDir_Right)) {
-                    _objectlist.ModelList[i]->rotation =glm::normalize(
-                        glm::quat{ cos(rota_angle / 2), 0.0, -1.0 * sin(rota_angle / 2),0.0 }  *_objectlist.ModelList[i]->rotation);
+                    _objectlist.ModelList[i]->rotation =glm::normalize(glm::quat{ cos(rota_angle / 2),0.0,-1.0*sin(rota_angle / 2),0.0 }*_objectlist.ModelList[i]->rotation);
                 }
                 ImGui::SameLine();ImGui::Text("rotation-y");ImGui::SameLine();
                 if (ImGui::ArrowButton("##left", ImGuiDir_Left)) {
-                    _objectlist.ModelList[i]->rotation =glm::normalize(
-                        glm::quat{ cos(rota_angle / 2),1.0*sin(rota_angle / 2), 0.0, 0.0 } * _objectlist.ModelList[i]->rotation);
+                    _objectlist.ModelList[i]->rotation =glm::normalize(glm::quat{ cos(rota_angle / 2),1.0*sin(rota_angle / 2),0.0,0.0 }*_objectlist.ModelList[i]->rotation);
                 }
                 ImGui::SameLine(0.0f, spacing);
                 if (ImGui::ArrowButton("##right", ImGuiDir_Right)) {
-                    _objectlist.ModelList[i]->rotation =glm::normalize(
-                        glm::quat{ cos(rota_angle / 2), -1.0 * sin(rota_angle / 2), 0.0, 0.0 } * _objectlist.ModelList[i]->rotation);
+                    _objectlist.ModelList[i]->rotation =glm::normalize(glm::quat{ cos(rota_angle / 2),-1.0*sin(rota_angle / 2),0.0,0.0 }*_objectlist.ModelList[i]->rotation);
                 }
                 ImGui::SameLine();ImGui::Text("rotation-z");ImGui::SameLine();
                 if (ImGui::ArrowButton("##left", ImGuiDir_Left)) {
-                    _objectlist.ModelList[i]->rotation =glm::normalize(
-                        glm::quat{ cos(rota_angle / 2), 0.0, 0.0, 1.0 * sin(rota_angle / 2) } * _objectlist.ModelList[i]->rotation);
+                    _objectlist.ModelList[i]->rotation =glm::normalize(glm::quat{ cos(rota_angle / 2),0.0,0.0,1.0*sin(rota_angle / 2) }*_objectlist.ModelList[i]->rotation);
                 }
                 ImGui::SameLine(0.0f, spacing);
                 if (ImGui::ArrowButton("##right", ImGuiDir_Right)) {
-                    _objectlist.ModelList[i]->rotation =glm::normalize(
-                        glm::quat{ cos(rota_angle / 2), 0.0, 0.0, -1.0 * sin(rota_angle / 2) } * _objectlist.ModelList[i]->rotation);
+                    _objectlist.ModelList[i]->rotation =glm::normalize(glm::quat{ cos(rota_angle / 2),0.0,0.0,-1.0*sin(rota_angle / 2) }*_objectlist.ModelList[i]->rotation);
                 }
                 ImGui::PopButtonRepeat();
-                if(!_objectlist.visible[i] && ImGui::Button("Click me to display this object")) _objectlist.visible[i] = true;
-                else if(_objectlist.visible[i] && ImGui::Button("Click me to hide this object")) _objectlist.visible[i] = false;
+                if(!_objectlist.visible[i]&&ImGui::Button("Click me to display this object")) _objectlist.visible[i]=true;
+                else if(_objectlist.visible[i]&&ImGui::Button("Click me to hide this object")) _objectlist.visible[i]=false;
                 int texture_current_idx = _objectlist.TextureIndex[i]; // Here we store our selection data as an index.
                 ImGui::Text("Click to choose texture for object");
                 if (ImGui::BeginListBox("TextureList"))
@@ -942,14 +1280,14 @@ void Scene::drawGUIobj(bool &flag){
                 if(ImGui::Button("Export this orginal model to filename.obj")) 
                     exportOBJ(_objectlist.ModelList[i]->_vertices,_objectlist.ModelList[i]->_indices,_objectlist.objectname[i]);
                 if(ImGui::Button("Export transformed model to filename.obj")) 
-                    exportTransOBJ(_objectlist.ModelList[i]->_vertices,_objectlist.ModelList[i]->_indices,_objectlist.objectname[i], _objectlist.ModelList[i]->getModelMatrix());
-                if(_objectlist.ModelList.size() > 1 && ImGui::Button("Delete this object")) deleteModel(i);
-                ImGui::InputText("Change object name", newname, IM_ARRAYSIZE(newname)); ImGui::SameLine();
+                    exportTransOBJ(_objectlist.ModelList[i]->_vertices,_objectlist.ModelList[i]->_indices,_objectlist.objectname[i],_objectlist.ModelList[i]->getModelMatrix());
+                if(_objectlist.ModelList.size()>1&&ImGui::Button("Delete this object")) deleteModel(i);
+                ImGui::InputText("Change object name", newname, IM_ARRAYSIZE(newname));ImGui::SameLine();
                 if(ImGui::Button("Enter name")){
-                    std::string name = newname;
-                    _objectlist.objectname[i] = name;
-                    name = "Change Success!";
-                    name = " ";
+                    std::string name=newname;
+                    _objectlist.objectname[i]=name;
+                    name="Change Success!";
+                    name=" ";
                     strcpy(newname,name.c_str());
                 }
                 ImGui::TreePop();
@@ -959,32 +1297,30 @@ void Scene::drawGUIobj(bool &flag){
     if(ImGui::CollapsingHeader("Draw Series")){
         if(ImGui::Button("Init Series")){
             _serise.sequence.clear();
-            for (int i = 0; i < _objectlist.ModelList.size(); ++i){
+            for (int i = 0; i < _objectlist.ModelList.size(); i++){
                 _serise.sequence.push_back(-1);
             }
         }
-        _serise.max = -1;
-        for(int i = 0; i<_serise.sequence.size(); ++i){
-            ImGui::SliderInt(_objectlist.objectname[i].c_str(), &_serise.sequence[i],-1,20);
-            if(_serise.sequence[i] > _serise.max) _serise.max=_serise.sequence[i];
+        _serise.max=-1;
+        for(int i=0;i<_serise.sequence.size();i++){
+            ImGui::SliderInt(_objectlist.objectname[i].c_str(),&_serise.sequence[i],-1,20);
+            if(_serise.sequence[i]>_serise.max) _serise.max=_serise.sequence[i];
         }
     }
     if(ImGui::CollapsingHeader("Light Status")){
         ImVec4 color = ImVec4(_directionlight->color.x, _directionlight->color.y, _directionlight->color.z,1.0f);
-        static float position[3] = {_directionlight->position.x,_directionlight->position.y,_directionlight->position.z};
-
+        static float position[3]={_directionlight->position.x,_directionlight->position.y,_directionlight->position.z};
         ImGui::DragFloat3("light position",position,0.05f,-10.0f,10.0f,"%.3f");
-        _directionlight->position = glm::vec3(position[0],position[1],position[2]);
-        _lightlist.ModelList[0]->position = glm::vec3(position[0],position[1],position[2]);
-
-        ImGui::DragFloat("Light Intensity",&_directionlight->intensity, 0.05f, 0.1f, 10.0f, "%.3f");
+        _directionlight->position=glm::vec3(position[0],position[1],position[2]);
+        ImGui::DragFloat("Light Intensity",&_directionlight->intensity,0.05f,0.1f,10.0f,"%.3f");
         ImGui::ColorEdit3("Light Color",(float*)&color);
-        _directionlight->color = glm::vec3(color.x, color.y, color.z);
-        _directionlight->radiance = _directionlight->intensity * _directionlight->color;
+        _directionlight->color=glm::vec3(color.x,color.y,color.z);
+        _directionlight->radiance=_directionlight->intensity*_directionlight->color;
     }
     
     ImGui::End();
 }
+
 void Scene::drawGUIhelp(bool &flag){
     ImGui::Begin("Helps", &flag);
     ImGui::Text("This is something could give you a help.");
