@@ -301,26 +301,26 @@ vec3 SampleHemisphereGGX(inout float s, out float pdf,vec2 uv,vec3 V){
 
 void main() {
   float s = InitRand(gl_FragCoord.xy);
-  vec2 uv= vec2(1.0*gl_FragCoord.x/(1.0*Width),1.0*gl_FragCoord.y/(1.0*Height));
+  vec2 uv= vec2(1.0 * gl_FragCoord.x/(1.0 * Width), 1.0 * gl_FragCoord.y/(1.0*Height));
   if (GetvPosWorld(uv) == vec3(0.0)) discard;
   vec3 CameraDir = normalize(uCameraPos - GetvPosWorld(uv));
   vec3 N = GetGBufferNormalWorld(uv);
   vec3 L = vec3(0.0);
-  L = visibility(uv)*PBRcolor(uLightDir,CameraDir,uv)*uLightRadiance;
+  L = visibility(uv) * PBRcolor(uLightDir, CameraDir, uv) * uLightRadiance;
   vec3 L_indirect = vec3(0.0);
-  for(int i=0;i<SAMPLE_NUM;i++){
-    float pdf=0.0;
+  for(int i = 0; i < SAMPLE_NUM; i++){
+    float pdf = 0.0;
     vec3 dir;
-    dir=SampleHemisphereGGX(s,pdf,uv,CameraDir);
-    vec3 hit=vec3(0.0);
-    if(RayMarch(GetvPosWorld(uv),dir,hit)){
-      vec3 l=PBRcolor(dir,CameraDir,uv) * PBRcolor(uLightDir,-dir,GetScreenCoordinate(hit))
+    dir = SampleHemisphereGGX(s, pdf, uv, CameraDir);
+    vec3 hit = vec3(0.0);
+    if(RayMarch(GetvPosWorld(uv), dir, hit)){
+      vec3 l = PBRcolor(dir,CameraDir,uv) * PBRcolor(uLightDir,-dir,GetScreenCoordinate(hit))
             * visibility(GetScreenCoordinate(hit)) * uLightRadiance / pdf;
-      L_indirect=L_indirect+l;
+      L_indirect = L_indirect+l;
     }
   }
-  L_indirect=L_indirect/float (SAMPLE_NUM);
-  L=L+L_indirect;
+  L_indirect = L_indirect/float (SAMPLE_NUM);
+  L=L + L_indirect;
   vec3 color = L / (L + vec3(1.0));
   color = pow(clamp(L, vec3(0.0), vec3(1.0)), vec3(1.0 / 2.2));
   gl_FragColor = vec4(vec3(color.rgb), 1.0);

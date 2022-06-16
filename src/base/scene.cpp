@@ -34,7 +34,50 @@ Scene::Scene(const Options& options): Application(options) {
 
 	// init light
 	_directionlight.reset(new DirectionalLight());
-    _directionlight->position =glm::vec3(2.33f, 20.0f, 5.0f);
+    _directionlight->position = glm::vec3(2.33f, 20.0f, 5.0f);
+
+    {
+        const std::string lightCubePath = "../media/plane.obj";
+        _lightlist.ModelList.push_back(nullptr);
+        _lightlist.ModelList[0].reset(new Model(lightCubePath));
+        _lightlist.filepath.push_back(lightCubePath);
+        _lightlist.visible.push_back(true);
+        _lightlist.Color.push_back(glm::vec3(1.0));
+        _lightlist.ModelList[0]->position = glm::vec3(8.0f, 8.0f, 5.0f);
+        _lightlist.ModelList[0]->scale = glm::vec3(2.0f);
+
+        _lightlist.ModelList.push_back(nullptr);
+        _lightlist.ModelList[1].reset(new Model(lightCubePath));
+        _lightlist.filepath.push_back(lightCubePath);
+        _lightlist.visible.push_back(true);
+        _lightlist.Color.push_back(glm::vec3(1.0));
+        _lightlist.ModelList[1]->position = glm::vec3(0.0f, 8.0f, 5.0f);
+        _lightlist.ModelList[1]->scale = glm::vec3(2.0f);
+
+        _lightlist.ModelList.push_back(nullptr);
+        _lightlist.ModelList[2].reset(new Model(lightCubePath));
+        _lightlist.filepath.push_back(lightCubePath);
+        _lightlist.visible.push_back(true);
+        _lightlist.Color.push_back(glm::vec3(1.0));
+        _lightlist.ModelList[2]->position = glm::vec3(8.0f, 8.0f, -5.0f);
+        _lightlist.ModelList[2]->scale = glm::vec3(2.0f);
+
+        // _lightlist.ModelList.push_back(nullptr);
+        // _lightlist.ModelList[3].reset(new Model(lightCubePath));
+        // _lightlist.filepath.push_back(lightCubePath);
+        // _lightlist.visible.push_back(true);
+        // _lightlist.Color.push_back(glm::vec3(1.0));
+        // _lightlist.ModelList[3]->position = glm::vec3(-8.0f, 8.0f, -2-5.0f);
+        // _lightlist.ModelList[3]->scale = glm::vec3(2.0f);
+
+        // _lightlist.ModelList.push_back(nullptr);
+        // _lightlist.ModelList[4].reset(new Model(lightCubePath));
+        // _lightlist.filepath.push_back(lightCubePath);
+        // _lightlist.visible.push_back(true);
+        // _lightlist.Color.push_back(glm::vec3(1.0));
+        // _lightlist.ModelList[4]->position = glm::vec3(-8.0f, 8.0f, 5.0f);
+        // _lightlist.ModelList[4]->scale = glm::vec3(2.0f);
+    }
 
 	// init skybox
 	_skybox.reset(new SkyBox(skyboxTexturePaths));
@@ -189,39 +232,185 @@ void Scene::initPathTracingModel(int index, Material m) {
     }
 }
 
+void Scene::initPathTracingLight(int index, Material m) {
+    auto vertices = _lightlist.ModelList[index]->_vertices;
+    auto indices = _lightlist.ModelList[index]->_indices;
+
+    mat4 model = _lightlist.ModelList[index]->getModelMatrix();
+    mat4 view = _camera->getViewMatrix();
+    mat4 projection = _camera->getProjectionMatrix();
+    for(auto& v : vertices) {
+        v.position = projection * view * model * glm::vec4(v.position, 1.0f);
+    }
+
+    // 构建 Triangle 对象数组
+    int offset = triangles.size();  // 增量更新
+    triangles.resize(offset + indices.size() / 3);
+    for (int i = 0; i < indices.size(); i += 3) {
+        Triangle& t = triangles[offset + i / 3];
+        // 传顶点属性
+        t.p1 = vertices[indices[i]].position;
+        t.p2 = vertices[indices[i + 1]].position;
+        t.p3 = vertices[indices[i + 2]].position;
+
+        t.n1 = vertices[indices[i]].normal;
+        t.n2 = vertices[indices[i + 1]].normal;
+        t.n3 = vertices[indices[i + 2]].normal;
+
+        // 传材质
+        t.material = m;
+    }
+}
+
+int buildBVHwithSAH(std::vector<Triangle>& triangles, std::vector<BVHNode>& nodes, int l, int r, int n) {
+    if (l > r) return 0;
+
+    const float INF = 1145141919.0f;
+    nodes.push_back(BVHNode());
+    int id = nodes.size() - 1;   
+    nodes[id].left = nodes[id].right = nodes[id].n = nodes[id].index = 0;
+    nodes[id].AA = vec3(1145141919, 1145141919, 1145141919);
+    nodes[id].BB = vec3(-1145141919, -1145141919, -1145141919);
+
+    // 计算 AABB
+    for (int i = l; i <= r; i++) {
+        // 最小点 AA
+        float minx = min(triangles[i].p1.x, min(triangles[i].p2.x, triangles[i].p3.x));
+        float miny = min(triangles[i].p1.y, min(triangles[i].p2.y, triangles[i].p3.y));
+        float minz = min(triangles[i].p1.z, min(triangles[i].p2.z, triangles[i].p3.z));
+        nodes[id].AA.x = min(nodes[id].AA.x, minx);
+        nodes[id].AA.y = min(nodes[id].AA.y, miny);
+        nodes[id].AA.z = min(nodes[id].AA.z, minz);
+        // 最大点 BB
+        float maxx = max(triangles[i].p1.x, max(triangles[i].p2.x, triangles[i].p3.x));
+        float maxy = max(triangles[i].p1.y, max(triangles[i].p2.y, triangles[i].p3.y));
+        float maxz = max(triangles[i].p1.z, max(triangles[i].p2.z, triangles[i].p3.z));
+        nodes[id].BB.x = max(nodes[id].BB.x, maxx);
+        nodes[id].BB.y = max(nodes[id].BB.y, maxy);
+        nodes[id].BB.z = max(nodes[id].BB.z, maxz);
+    }
+
+    // 不多于 n 个三角形 返回叶子节点
+    if ((r - l + 1) <= n) {
+        nodes[id].n = r - l + 1;
+        nodes[id].index = l;
+        return id;
+    }
+
+    // 否则递归建树
+    float Cost = INF;
+    int Axis = 0;
+    int Split = (l + r) / 2;
+    for (int axis = 0; axis < 3; axis++) {
+        // 分别按 x，y，z 轴排序
+        if (axis == 0) std::sort(&triangles[0] + l, &triangles[0] + r + 1, cmpx);
+        if (axis == 1) std::sort(&triangles[0] + l, &triangles[0] + r + 1, cmpy);
+        if (axis == 2) std::sort(&triangles[0] + l, &triangles[0] + r + 1, cmpz);
+
+        // leftMax[i]: [l, i] 中最大的 xyz 值
+        // leftMin[i]: [l, i] 中最小的 xyz 值
+        std::vector<vec3> leftMax(r - l + 1, vec3(-INF, -INF, -INF));
+        std::vector<vec3> leftMin(r - l + 1, vec3(INF, INF, INF));
+        // 计算前缀 注意 i-l 以对齐到下标 0
+        for (int i = l; i <= r; i++) {
+            Triangle& t = triangles[i];
+            int bias = (i == l) ? 0 : 1;  // 第一个元素特殊处理
+
+            leftMax[i - l].x = max(leftMax[i - l - bias].x, max(t.p1.x, max(t.p2.x, t.p3.x)));
+            leftMax[i - l].y = max(leftMax[i - l - bias].y, max(t.p1.y, max(t.p2.y, t.p3.y)));
+            leftMax[i - l].z = max(leftMax[i - l - bias].z, max(t.p1.z, max(t.p2.z, t.p3.z)));
+
+            leftMin[i - l].x = min(leftMin[i - l - bias].x, min(t.p1.x, min(t.p2.x, t.p3.x)));
+            leftMin[i - l].y = min(leftMin[i - l - bias].y, min(t.p1.y, min(t.p2.y, t.p3.y)));
+            leftMin[i - l].z = min(leftMin[i - l - bias].z, min(t.p1.z, min(t.p2.z, t.p3.z)));
+        }
+
+        // rightMax[i]: [i, r] 中最大的 xyz 值
+        // rightMin[i]: [i, r] 中最小的 xyz 值
+        std::vector<vec3> rightMax(r - l + 1, vec3(-INF, -INF, -INF));
+        std::vector<vec3> rightMin(r - l + 1, vec3(INF, INF, INF));
+        // 计算后缀 注意 i-l 以对齐到下标 0
+        for (int i = r; i >= l; i--) {
+            Triangle& t = triangles[i];
+            int bias = (i == r) ? 0 : 1;  // 第一个元素特殊处理
+
+            rightMax[i - l].x = max(rightMax[i - l + bias].x, max(t.p1.x, max(t.p2.x, t.p3.x)));
+            rightMax[i - l].y = max(rightMax[i - l + bias].y, max(t.p1.y, max(t.p2.y, t.p3.y)));
+            rightMax[i - l].z = max(rightMax[i - l + bias].z, max(t.p1.z, max(t.p2.z, t.p3.z)));
+
+            rightMin[i - l].x = min(rightMin[i - l + bias].x, min(t.p1.x, min(t.p2.x, t.p3.x)));
+            rightMin[i - l].y = min(rightMin[i - l + bias].y, min(t.p1.y, min(t.p2.y, t.p3.y)));
+            rightMin[i - l].z = min(rightMin[i - l + bias].z, min(t.p1.z, min(t.p2.z, t.p3.z)));
+        }
+
+        // 遍历寻找分割
+        float cost = INF;
+        int split = l;
+        for (int i = l; i <= r - 1; i++) {
+            float lenx, leny, lenz;
+            // 左侧 [l, i]
+            vec3 leftAA = leftMin[i - l];
+            vec3 leftBB = leftMax[i - l];
+            lenx = leftBB.x - leftAA.x;
+            leny = leftBB.y - leftAA.y;
+            lenz = leftBB.z - leftAA.z;
+            float leftS = 2.0 * ((lenx * leny) + (lenx * lenz) + (leny * lenz));
+            float leftCost = leftS * (i - l + 1);
+
+            // 右侧 [i+1, r]
+            vec3 rightAA = rightMin[i + 1 - l];
+            vec3 rightBB = rightMax[i + 1 - l];
+            lenx = rightBB.x - rightAA.x;
+            leny = rightBB.y - rightAA.y;
+            lenz = rightBB.z - rightAA.z;
+            float rightS = 2.0 * ((lenx * leny) + (lenx * lenz) + (leny * lenz));
+            float rightCost = rightS * (r - i);
+
+            // 记录每个分割的最小答案
+            float totalCost = leftCost + rightCost;
+            if (totalCost < cost) {
+                cost = totalCost;
+                split = i;
+            }
+        }
+        // 记录每个轴的最佳答案
+        if (cost < Cost) {
+            Cost = cost;
+            Axis = axis;
+            Split = split;
+        }
+    }
+
+    // 按最佳轴分割
+    if (Axis == 0) std::sort(&triangles[0] + l, &triangles[0] + r + 1, cmpx);
+    if (Axis == 1) std::sort(&triangles[0] + l, &triangles[0] + r + 1, cmpy);
+    if (Axis == 2) std::sort(&triangles[0] + l, &triangles[0] + r + 1, cmpz);
+
+    // 递归
+    int left  = buildBVHwithSAH(triangles, nodes, l, Split, n);
+    int right = buildBVHwithSAH(triangles, nodes, Split + 1, r, n);
+
+    nodes[id].left = left;
+    nodes[id].right = right;
+
+    return id;
+}
+
 void Scene::initPathTracingResources() {
     Material m;
     m.baseColor = vec3(1, 1, 1);
-    // for(int i = 0; i < _objectlist.ModelList.size(); ++i){
-    //     if(i == 0)
-    //         m.emissive = vec3(30, 20, 10);
-    //     else
-    //         m.emissive = vec3(0, 0, 0);
-    //     initPathTracingModel(i, m);
-    // }
-    m.emissive = vec3(30, 20, 10);
-    initPathTracingModel(0, m);
+    for(int i = 0; i < _lightlist.ModelList.size(); ++i){
+        m.emissive = vec3(30, 20, 10);
+        initPathTracingLight(i, m);
+    }
 
-    m.baseColor = vec3(1, 0.5, 0.5);
-    m.roughness = 0.1;
-    m.metallic = 0.0;
-    m.clearcoat = 1.0;
-    m.subsurface = 1.0;
     m.emissive = vec3(0, 0, 0);
-    initPathTracingModel(1, m);
-
-    m.baseColor = vec3(0.75, 0.7, 0.15);
-    m.roughness = 0.15;
-    m.metallic = 1.0;
-    m.clearcoat = 1.0;
-    initPathTracingModel(2, m);
-
-    m.baseColor = vec3(0.5, 0.5, 1);
-    m.metallic = 0.0;
-    m.roughness = 0.1;
-    m.clearcoat = 1.0;
-    initPathTracingModel(3, m);
-    initPathTracingModel(4, m);
+    for(int i = 0; i < _objectlist.ModelList.size(); ++i){
+        m.roughness = _objectlist.roughness[i];
+        m.metallic = _objectlist.metallic[i];
+        m.baseColor = _objectlist.Color[i];
+        initPathTracingModel(i, m);
+    }
 
     int nTriangles = triangles.size();
     
@@ -233,7 +422,8 @@ void Scene::initPathTracingResources() {
     bvhNode.AA = vec3(1, 1, 0);
     bvhNode.BB = vec3(0, 1, 0);
     std::vector<BVHNode> nodes{ bvhNode };
-    buildBVH(triangles, nodes, 0, triangles.size() - 1, 8);
+    // buildBVH(triangles, nodes, 0, triangles.size() - 1, 8);
+    buildBVHwithSAH(triangles, nodes, 0, triangles.size() - 1, 8);
     int nNodes = nodes.size();
     std::cout << "BVH Construction Finish: " << nNodes << " nodes" << std::endl;
 
@@ -252,10 +442,8 @@ void Scene::initPathTracingResources() {
         // 材质
         triangles_encoded[i].emissive = m.emissive;
         triangles_encoded[i].baseColor = m.baseColor;
-        triangles_encoded[i].param1 = vec3(m.subsurface, m.metallic, m.specular);
-        triangles_encoded[i].param2 = vec3(m.specularTint, m.roughness, m.anisotropic);
-        triangles_encoded[i].param3 = vec3(m.sheen, m.sheenTint, m.clearcoat);
-        triangles_encoded[i].param4 = vec3(m.clearcoatGloss, m.IOR, m.transmission);
+
+        triangles_encoded[i].material = vec3(m.roughness, m.metallic, m.specular);
     }
 
     nodes_encoded.resize(nNodes);
@@ -287,7 +475,6 @@ void Scene::initPathTracingResources() {
 
     pass1.program = getShaderProgram("../../src/shaders/PathTracingShader/PathTracingfs.glsl", 
         "../../src/shaders/PathTracingShader/PathTracingvs.glsl");
-    // pass1.width = pass1.height = 256;
     pass1.colorAttachments.push_back(getTextureRGB32F(pass1.width, pass1.height));
     pass1.colorAttachments.push_back(getTextureRGB32F(pass1.width, pass1.height));
     pass1.colorAttachments.push_back(getTextureRGB32F(pass1.width, pass1.height));
@@ -323,30 +510,35 @@ void Scene::handleInput() {
 	}
 
 	if (_keyboardInput.keyStates[GLFW_KEY_W] != GLFW_RELEASE&&mouse_capture_flag) {
+        frameCounter = 0;
 		if(_CameraMode==CameraMode::Free)_camera->position += _camera->getFront() * _cameraMoveSpeed * (float)_deltaTime*1.5;
         else _camera->position += 
             glm::normalize(glm::vec3(_camera->getFront().x,0.0f,_camera->getFront().z)) * _cameraMoveSpeed * (float)_deltaTime;
 	}
 
 	if (_keyboardInput.keyStates[GLFW_KEY_A] != GLFW_RELEASE&&mouse_capture_flag) {
+        frameCounter = 0;
 		if(_CameraMode==CameraMode::Free)_camera->position -= _camera->getRight() * _cameraMoveSpeed * (float)_deltaTime*1.5;
         else _camera->position -= 
             glm::normalize(glm::vec3(_camera->getRight().x,0.0f,_camera->getRight().z)) * _cameraMoveSpeed * (float)_deltaTime;
 	}
 
 	if (_keyboardInput.keyStates[GLFW_KEY_S] != GLFW_RELEASE&&mouse_capture_flag) {
+        frameCounter = 0;
 		if(_CameraMode==CameraMode::Free)_camera->position -= _camera->getFront() * _cameraMoveSpeed * (float)_deltaTime*1.5;
         else _camera->position -= 
             glm::normalize(glm::vec3(_camera->getFront().x,0.0f,_camera->getFront().z)) * _cameraMoveSpeed * (float)_deltaTime;
 	}
 
 	if (_keyboardInput.keyStates[GLFW_KEY_D] != GLFW_RELEASE&&mouse_capture_flag) {
+        frameCounter = 0;
 		if(_CameraMode==CameraMode::Free)_camera->position += _camera->getRight() * _cameraMoveSpeed * (float)_deltaTime*1.5;
         else _camera->position += 
             glm::normalize(glm::vec3(_camera->getRight().x,0.0f,_camera->getRight().z)) * _cameraMoveSpeed * (float)_deltaTime;
 	}
 
     if (_keyboardInput.keyStates[GLFW_KEY_SPACE] != GLFW_RELEASE&&mouse_capture_flag) {
+        frameCounter = 0;
 		if(_CameraMode==CameraMode::Free)_camera->position += glm::vec3(0.0,1.0,0.0) * _cameraMoveSpeed * (float)_deltaTime*1.5;
 	}
 
@@ -361,6 +553,7 @@ void Scene::handleInput() {
     }
 
     if (_mouseInput.move.xCurrent != _mouseInput.move.xOld&&mouse_capture_flag) {
+        frameCounter = 0;
 		// std::cout << "mouse move in x direction" << std::endl;
 		// rotate around world up: glm::vec3(0.0f, 1.0f, 0.0f)
         if(test) _mouseInput.move.xOld=_mouseInput.move.xCurrent;
@@ -374,6 +567,7 @@ void Scene::handleInput() {
 	}
 	
 	if (_mouseInput.move.yCurrent != _mouseInput.move.yOld&&mouse_capture_flag) {
+        frameCounter = 0;
 		// std::cout << "mouse move in y direction" << std::endl;
 		/* write your code here */
 		// rotate around local right
@@ -978,15 +1172,15 @@ void Scene::drawList(){
 }
 
 void Scene::PathTracing() {
-    vec3 viewPos = _camera->position;
+    vec3 viewPos = vec3(_camera->position.x, _camera->position.y, _camera->position.z + 60.0f);
     mat4 cameraRotate = _camera->getViewMatrix();
     cameraRotate = inverse(cameraRotate);
 
     // 传 uniform 给 pass1
     glUseProgram(pass1.program);
-    glUniform3fv(glGetUniformLocation(pass1.program, "viewPos"), 1, value_ptr(viewPos));
+    glUniform3fv(glGetUniformLocation(pass1.program, "uCameraPos"), 1, value_ptr(viewPos));
     glUniformMatrix4fv(glGetUniformLocation(pass1.program, "cameraRotate"), 1, GL_FALSE, value_ptr(cameraRotate));
-    glUniform1ui(glGetUniformLocation(pass1.program, "frameCounter"), frameCounter++);// 传计数器用作随机种子
+    glUniform1ui(glGetUniformLocation(pass1.program, "frameCounter"), frameCounter++);
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_BUFFER, _trianglesTextureBuffer);

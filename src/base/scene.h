@@ -43,6 +43,13 @@ struct TextureList{
     std::vector<std::string> filepath;
 };
 
+struct LightList{
+    std::vector<bool> visible;//可见性
+    std::vector<std::unique_ptr<Model>> ModelList;//物体模型
+    std::vector<glm::vec3> Color;//颜色坐标
+    std::vector<std::string> filepath;//保存用
+};
+
 struct Serise{
     std::vector<int> sequence;
     int max;
@@ -56,6 +63,7 @@ private:
     // 物体清单，分别录入了模型纹理以及对应的Shader
     ObjectList _objectlist;
     TextureList _texturelist;
+    LightList _lightlist;
 
     std::unique_ptr<DirectionalLight> _directionlight;
     std::unique_ptr<PerspectiveCamera> _camera;
@@ -130,6 +138,7 @@ private:
     void initShader();
     void initPathTracingResources();
     void initPathTracingModel(int index, Material m);
+    void initPathTracingLight(int index, Material m);
 
     void drawList();
     void debugShadowMap(float near_plane, float far_plane);
