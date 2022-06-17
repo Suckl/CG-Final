@@ -133,7 +133,7 @@ void main(void) {
   // gl_FragData[1] = vec4(vec3(vDepth*0.1), 1.0);
   gl_FragData[1] = pack((gl_FragCoord.z));
   //normal
-  gl_FragData[2] = vec4(vNormalWorld*0.5+vec3(0.5), 1.0);
+  gl_FragData[2] = vec4(vNormalWorld*0.5 + vec3(0.5), 1.0);
   //visible
   gl_FragData[3] = vec4(vec3(PCF(uShadowMap,vec4(shadowCoord,1.0))), 1.0);
   //color

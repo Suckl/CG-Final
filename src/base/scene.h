@@ -10,9 +10,9 @@
 #include"application.h"
 #include"framebuffer.h"
 #include"fullscreen_quad.h"
-
+#include "PathTracingResources.h"
 enum class ShadowRenderMode {
-	None,ShadowMapping, PCF, PCSS,SSR,SSR_Filter
+	None,ShadowMapping, PCF, PCSS, SSR, SSR_Filter, Path_Tracing
 };
 
 enum class ScreenShotMode {
@@ -41,6 +41,13 @@ struct TextureList{
     std::vector<std::string> filepath;
 };
 
+struct LightList{
+    std::vector<bool> visible;//可见性
+    std::vector<std::unique_ptr<Model>> ModelList;//物体模型
+    std::vector<glm::vec3> Color;//颜色坐标
+    std::vector<std::string> filepath;//保存用
+};
+
 struct Serise{
     std::vector<int> sequence;
     int max;
@@ -54,6 +61,7 @@ private:
     // 物体清单，分别录入了模型纹理以及对应的Shader
     ObjectList _objectlist;
     TextureList _texturelist;
+    LightList _lightlist;
 
     std::unique_ptr<DirectionalLight> _directionlight;
     std::unique_ptr<PerspectiveCamera> _camera;
@@ -91,6 +99,29 @@ private:
     std::unique_ptr<DataTexture> _beauty;
     std::unique_ptr<FullscreenQuad> _fullscrennquad;
 
+
+    // Path Tracing resources
+    std::vector<Triangle> triangles;
+    BVHNode bvhNode;
+    std::vector<Triangle_encoded> triangles_encoded;
+    std::vector<BVHNode_encoded> nodes_encoded;
+
+    GLuint _trianglesTextureBuffer;
+    GLuint _nodesTextureBuffer;
+    GLuint _lastFrame;
+
+    RenderPass pass1;
+    RenderPass pass2;
+    RenderPass pass3;
+
+    std::unique_ptr<Framebuffer> _pathTracingfbo;
+    std::unique_ptr<Framebuffer> _pass2fbo;
+    std::unique_ptr<Framebuffer> _pass3fbo;
+
+    clock_t t1, t2;
+    double dt, fps;
+    unsigned int frameCounter = 0;
+
     enum ShadowRenderMode _ShadowRenderMode=ShadowRenderMode::None;
     enum ScreenShotMode _ScreenShotMode=ScreenShotMode::Normal;
     enum CameraMode _CameraMode=CameraMode::FPS;
@@ -104,6 +135,9 @@ private:
     const unsigned int _shadowWidth = 2048, _shadowHeight = 2048;
 
     void initShader();
+    void initPathTracingResources();
+    void initPathTracingModel(int index, Material m);
+    void initPathTracingLight(int index, Material m);
 
     void drawList();
     void debugShadowMap(float near_plane, float far_plane);
@@ -128,4 +162,6 @@ private:
     void AddPrism(float r,float h,std::string name,int sides);
     void AddFrustum(float r1,float r2,float h,std::string name,int sides);
     void AddCone(float r,float h,std::string name);
+
+    void PathTracing();
 };
