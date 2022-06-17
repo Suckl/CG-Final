@@ -496,6 +496,7 @@ void Scene::initPathTracingResources() {
     pass3.program = getShaderProgram("../../src/shaders/PathTracingShader/Pass3fs.glsl", 
         "../../src/shaders/PathTracingShader/PathTracingvs.glsl");
     pass3.bindData(true);
+
 }
 
 void Scene::handleInput() {
@@ -1041,6 +1042,7 @@ void Scene::drawList(){
             glActiveTexture(GL_TEXTURE4);_colortexture->unbind();
             glActiveTexture(GL_TEXTURE5);_positiontexture->unbind();
         }
+        
         break;
     
         case ShadowRenderMode::SSR_Filter: {

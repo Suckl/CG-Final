@@ -10,9 +10,7 @@
 #include"application.h"
 #include"framebuffer.h"
 #include"fullscreen_quad.h"
-
 #include "PathTracingResources.h"
-
 enum class ShadowRenderMode {
 	None,ShadowMapping, PCF, PCSS, SSR, SSR_Filter, Path_Tracing
 };
@@ -100,6 +98,7 @@ private:
     std::unique_ptr<DataTexture> _positiontexture;
     std::unique_ptr<DataTexture> _beauty;
     std::unique_ptr<FullscreenQuad> _fullscrennquad;
+
 
     // Path Tracing resources
     std::vector<Triangle> triangles;
