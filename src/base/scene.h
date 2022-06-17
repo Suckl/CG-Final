@@ -12,6 +12,7 @@
 #include"fullscreen_quad.h"
 
 #include "PathTracingResources.h"
+#include "hdrloader.h"
 
 enum class ShadowRenderMode {
 	None,ShadowMapping, PCF, PCSS, SSR, SSR_Filter, Path_Tracing
@@ -110,6 +111,9 @@ private:
     GLuint _trianglesTextureBuffer;
     GLuint _nodesTextureBuffer;
     GLuint _lastFrame;
+    GLuint _hdrMap;
+    GLuint hdrCache;
+    int hdrResolution;
 
     RenderPass pass1;
     RenderPass pass2;

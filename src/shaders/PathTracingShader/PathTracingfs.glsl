@@ -10,11 +10,14 @@ uniform int nTriangles;
 uniform int nNodes;
 uniform int width;
 uniform int height;
+uniform int hdrResolution;
 
 uniform samplerBuffer triangles;
 uniform samplerBuffer nodes;
 
 uniform sampler2D lastFrame;
+uniform sampler2D hdrMap;
+uniform sampler2D hdrCache;
 
 uniform vec3 uCameraPos;
 uniform mat4 cameraRotate;
@@ -74,9 +77,9 @@ struct HitResult {
 };
 
 struct Reservoir {
-    int size;
-    int capacity;
-    int index;
+    int M; // number of samples seen so far
+    int y; // outputSample
+    float W; // weightSum
 };
 
 // ----------------------------------------------------------------------------- //
@@ -400,16 +403,165 @@ vec3 PBRcolor(vec3 V, vec3 N, vec3 L, in Material material) {
 
 // ----------------------------------------------------------------------------- //
 
+vec2 toSphericalCoord(vec3 v) {
+    vec2 uv = vec2(atan(v.z, v.x), asin(v.y));
+    uv /= vec2(2.0 * PI, PI);
+    uv += 0.5;
+    uv.y = 1.0 - uv.y;
+    return uv;
+}
+
+vec3 hdrColor(vec3 L) {
+    vec2 uv = toSphericalCoord(normalize(L));
+    vec3 color = texture2D(hdrMap, uv).rgb;
+    return color;
+}
+
+float hdrPdf(vec3 L, int hdrResolution) {
+    vec2 uv = toSphericalCoord(normalize(L));
+
+    float pdf = texture2D(hdrCache, uv).b;
+    float theta = PI * (0.5 - uv.y);
+    float sin_theta = max(sin(theta), 1e-10);
+
+    float p_convert = float(hdrResolution * hdrResolution / 2) / (2.0 * PI * PI * sin_theta);  
+    
+    return pdf * p_convert;
+}
+// ----------------------------------------------------------------------------- //
+
 // Importance Sampling
-vec3 SampleCosineHemisphere(float u, float v, vec3 N) {
-    float r = sqrt(u);
-    float theta = v * 2.0 * PI;
+vec3 SampleHdr(float xi_1, float xi_2) {
+    vec2 xy = texture2D(hdrCache, vec2(xi_1, xi_2)).rg;
+    xy.y = 1.0 - xy.y; 
+
+    float phi = 2.0 * PI * (xy.x - 0.5);
+    float theta = PI * (xy.y - 0.5);
+
+    vec3 L = vec3(cos(theta)*cos(phi), sin(theta), cos(theta)*sin(phi));
+
+    return L;
+}
+
+vec3 SampleCosineHemisphere(float r1, float r2, vec3 N) {
+    float r = sqrt(r1);
+    float theta = r2 * 2.0 * PI;
     float x = r * cos(theta);
     float y = r * sin(theta);
     float z = sqrt(1.0 - x * x - y * y);
 
     vec3 L = toNormalHemisphere(vec3(x, y, z), N);
     return L;
+}
+
+float CosinePDF(vec3 L, vec3 N) {
+    return dot(L, N) / PI;
+}
+
+vec3 SampleHemisphereGGX(float r1, float r2, out float pdf, vec3 V, float diffuse){
+    vec2 E = vec2(r1, r2);
+    float a2 = pow(diffuse, 4);
+    float Phi = 2 * PI * E.x;
+    float CosTheta = sqrt( (1 - E.y) / ( 1 + (a2 - 1) * E.y ) );
+    float SinTheta = sqrt( 1 - CosTheta * CosTheta );
+
+    vec3 H;
+    H.x = SinTheta * cos( Phi );
+    H.y = SinTheta * sin( Phi );
+    H.z = CosTheta;
+
+    float d = ( CosTheta * a2 - CosTheta ) * CosTheta + 1;
+    float D = a2 / ( PI * d * d );
+    vec3 L = normalize(H * 2.0f * dot(V, H) - V);
+    pdf = D * CosTheta / (4 * dot (V,H));
+    return L;
+}
+
+float GGXPDF(vec3 L, vec3 N, float diffuse) {
+    return 1.0f;
+}
+
+float PowerHeuristic(float a, float b) {
+    float t = a * a;
+    return t / (b*b + t);
+}
+
+vec3 SampleIndirectLight(float r1, float r2, float r3, out float pdf, vec3 V, vec3 N, Material material) {
+    float r_diffuse = (1.0 - material.metallic);
+    float r_specular = 1.0;
+    float r_sum = r_diffuse + r_specular;
+
+    float p_diffuse = r_diffuse / r_sum;
+    if(r3 < p_diffuse) {
+        vec3 L = SampleCosineHemisphere(r1, r2, N);
+        pdf = CosinePDF(L, N);
+        return L;
+    } else {
+        return SampleHemisphereGGX(r1, r2, pdf, V, material.roughness);
+    }
+}
+
+float IndirectLightPDF(vec3 L, vec3 N, Material material) {
+    // float r_diffuse = (1.0 - material.metallic);
+    // float r_specular = 1.0;
+    // float r_sum = r_diffuse + r_specular;
+
+    // float p_diffuse = r_diffuse / r_sum;
+    // float p_specular = r_specular / r_sum;
+
+    // float pdf_diffuse = CosinePDF(L, N);
+    // // float pdf_specular = GGXPDF(L, N, material.roughness);
+    // float pdf_specular = 0.0;
+
+    // return p_diffuse * pdf_diffuse + p_specular * pdf_specular;
+    return CosinePDF(L, N);
+}
+
+// ----------------------------------------------------------------------------- //
+#define N_SAMPLES 8
+#define M_SAMPLES 32
+
+// Restir
+Reservoir UpdateReservoir(Reservoir r, int x, float w) {
+    r.W += w;
+    r.M++;
+    if (rand() < (w / r.W)) {
+        r.y = x;
+    }
+    return r;
+}
+
+Reservoir ReservoirSampling() {
+    Reservoir r;
+    for(int i = 0; i < M_SAMPLES; ++i) {
+        // r.update(S[i], weight(S[i]))
+    }
+    return r;
+}
+
+Reservoir RIS() {
+    Reservoir r;
+    for(int i = 0; i < M_SAMPLES; ++i) {
+        // generate x_i
+        //r.Update
+    }
+    // r.W
+    return r;
+}
+
+Reservoir reservoirReus() {
+    Reservoir reservoir;
+    
+    // Generate initial candidate
+    
+    // Evaluate visibility for initial candidates
+
+    // Temporal reuse
+
+    // Spatial reuse
+
+
+    return reservoir;
 }
 
 // ----------------------------------------------------------------------------- //
@@ -423,16 +575,41 @@ vec3 pathTracing(HitResult hit, uint maxBounce) {
     for(uint bounce = 0u; bounce < maxBounce; bounce++) {
         vec3 V = -hit.viewDir;
         vec3 N = hit.normal;
+        float pdf_light;
+        float pdf_indirectLight;
 
+        // direct light
+        Ray hdrTestRay;
+        hdrTestRay.startPoint = hit.hitPoint;
+        hdrTestRay.direction = SampleHdr(rand(), rand());
+
+        if(dot(N, hdrTestRay.direction) > 0.0) {         
+            HitResult hdrHit = hitBVH(hdrTestRay);
+            
+            if(!hdrHit.isHit) {
+                vec3 L = hdrTestRay.direction;
+                vec3 color = hdrColor(L);
+                pdf_light = hdrPdf(L, hdrResolution);
+                vec3 f_r = PBRcolor(V, N, L, hit.material);
+
+                pdf_indirectLight = IndirectLightPDF(L, N, hit.material);
+                
+                float mis_weight = PowerHeuristic(pdf_light, pdf_indirectLight);
+                Lo += mis_weight * history * color * f_r * dot(N, L) / pdf_light;
+            }
+        }
+
+        // indirect light
         vec2 uv = sobolVec2(frameCounter + 1u, bounce);
         uv = CranleyPattersonRotation(uv);
         float r1 = uv.x;
         float r2 = uv.y;
         float r3 = rand();
 
-        vec3 wi = toNormalHemisphere(SampleHemisphere(uv.x, uv.y), hit.normal);
+        vec3 wi = SampleIndirectLight(r1, r2, r3, pdf_indirectLight, V, N, hit.material);
         float cosine_o = max(0, dot(V, N)); 
         float cosine_i = max(0, dot(wi, N)); 
+        if(cosine_i <= 0.0) break;
 
         Ray randomRay;
         randomRay.startPoint = hit.hitPoint;
@@ -440,19 +617,23 @@ vec3 pathTracing(HitResult hit, uint maxBounce) {
         HitResult newHit = hitBVH(randomRay);
 
         vec3 f_r = PBRcolor(V, N, wi, hit.material);
-        float pdf = 1.0 / (2.0 * PI);
+        if(pdf_indirectLight <= 0.0) break;
 
         if(!newHit.isHit) {
-            vec3 skyColor = vec3(0);
-            Lo += history * skyColor *  f_r * cosine_i / pdf;
+            vec3 color = hdrColor(wi);
+            float pdf_light = hdrPdf(wi, hdrResolution);
+
+            float mis_weight = PowerHeuristic(pdf_light, pdf_indirectLight);
+            Lo += mis_weight * history * color *  f_r * cosine_i / pdf_indirectLight;
+
             break;
         }
         
         vec3 Le = newHit.material.emissive;
-        Lo += history * Le * f_r * cosine_i / pdf;
+        Lo += history * Le * f_r * cosine_i / pdf_indirectLight;
         
         hit = newHit;
-        history *= f_r * cosine_i / pdf;
+        history *= f_r * cosine_i / pdf_indirectLight;
     }
     
     return Lo;
@@ -476,6 +657,7 @@ void main() {
     
         if(!firstHit.isHit) {
             color += vec3(0, 0, 0);
+            color += hdrColor(ray.direction);
         } else {
             vec3 Le = firstHit.material.emissive;
             vec3 Li = pathTracing(firstHit, 2u);
