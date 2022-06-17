@@ -10,7 +10,6 @@
 #include"application.h"
 #include"framebuffer.h"
 #include"fullscreen_quad.h"
-
 #include "PathTracingResources.h"
 #include "hdrloader.h"
 
@@ -101,6 +100,7 @@ private:
     std::unique_ptr<DataTexture> _positiontexture;
     std::unique_ptr<DataTexture> _beauty;
     std::unique_ptr<FullscreenQuad> _fullscrennquad;
+
 
     // Path Tracing resources
     std::vector<Triangle> triangles;
