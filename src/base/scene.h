@@ -10,11 +10,11 @@
 #include"application.h"
 #include"framebuffer.h"
 #include"fullscreen_quad.h"
-#include "PathTracingResources.h"
-#include "hdrloader.h"
+
+#include "bvh.h"
 
 enum class ShadowRenderMode {
-	None,ShadowMapping, PCF, PCSS, SSR, SSR_Filter, Path_Tracing
+	None,ShadowMapping, PCF, PCSS, SSR, SSR_Filter, Path_Tracing, RTRT
 };
 
 enum class ScreenShotMode {
@@ -55,6 +55,39 @@ struct Serise{
     int max;
 };
 
+struct Material {
+    vec3 emissive = vec3(0, 0, 0);
+    vec3 baseColor = vec3(1, 1, 1);
+    
+    float roughness = 0.5;
+    float metallic = 0.0;
+    float specular = 0.5;
+};
+
+struct Triangle {
+    vec3 p1, p2, p3;
+    vec3 n1, n2, n3;
+    Material material;
+};
+
+struct Triangle_encoded {
+    vec3 p1, p2, p3;
+    vec3 n1, n2, n3;
+
+    vec3 emissive;
+    vec3 baseColor;
+
+    vec3 material;
+};
+
+class RenderPass {
+public:
+    GLuint FBO = 0;
+    GLuint vao, vbo;
+    std::vector<GLuint> colorAttachments;
+    GLuint program;
+};
+
 class Scene:public Application{
 public:
     Scene(const Options& options);
@@ -84,6 +117,8 @@ private:
     std::shared_ptr<GLSLProgram> _ssrShader;
     std::shared_ptr<GLSLProgram> _filterShader;
 
+    std::shared_ptr<GLSLProgram> _RTRTShader;
+
     // SSR resources
     std::unique_ptr<Framebuffer> _depthfbo;
     std::unique_ptr<Framebuffer> _gbufferfbo;
@@ -107,13 +142,13 @@ private:
     BVHNode bvhNode;
     std::vector<Triangle_encoded> triangles_encoded;
     std::vector<BVHNode_encoded> nodes_encoded;
+    int nTriangles;
+    int nNodes;
 
     GLuint _trianglesTextureBuffer;
     GLuint _nodesTextureBuffer;
+    GLuint _lightPosTextureBuffer;
     GLuint _lastFrame;
-    GLuint _hdrMap;
-    GLuint hdrCache;
-    int hdrResolution;
 
     RenderPass pass1;
     RenderPass pass2;
@@ -123,8 +158,6 @@ private:
     std::unique_ptr<Framebuffer> _pass2fbo;
     std::unique_ptr<Framebuffer> _pass3fbo;
 
-    clock_t t1, t2;
-    double dt, fps;
     unsigned int frameCounter = 0;
 
     enum ShadowRenderMode _ShadowRenderMode=ShadowRenderMode::None;
@@ -143,6 +176,7 @@ private:
     void initPathTracingResources();
     void initPathTracingModel(int index, Material m);
     void initPathTracingLight(int index, Material m);
+    void encodeTriangles();
 
     void drawList();
     void debugShadowMap(float near_plane, float far_plane);

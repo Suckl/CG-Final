@@ -8,26 +8,27 @@ out vec4 fragColor;
 uniform uint frameCounter;
 uniform int nTriangles;
 uniform int nNodes;
+uniform int nLights;
 uniform int width;
 uniform int height;
-uniform int hdrResolution;
 
 uniform samplerBuffer triangles;
 uniform samplerBuffer nodes;
+uniform samplerBuffer lightPositions;
 
 uniform sampler2D lastFrame;
-uniform sampler2D hdrMap;
-uniform sampler2D hdrCache;
 
 uniform vec3 uCameraPos;
 uniform mat4 cameraRotate;
+uniform mat4 projection;
 
 // ----------------------------------------------------------------------------- //
 
-#define PI              3.1415926
-#define INF             114514.0
+#define PI              3.1415926535897932384626433832795
+#define INF             233333.0
 #define SIZE_TRIANGLE   9
 #define SIZE_BVHNODE    4
+#define SIZE_LIGHT      1
 
 // ----------------------------------------------------------------------------- //
 
@@ -74,12 +75,6 @@ struct HitResult {
     vec3 normal;
     vec3 viewDir;
     Material material;
-};
-
-struct Reservoir {
-    int M; // number of samples seen so far
-    int y; // outputSample
-    float W; // weightSum
 };
 
 // ----------------------------------------------------------------------------- //
@@ -170,13 +165,19 @@ Triangle getTriangle(int i) {
     int offset = i * SIZE_TRIANGLE;
     Triangle t;
 
-    t.p1 = texelFetch(triangles, offset + 0).xyz;
-    t.p2 = texelFetch(triangles, offset + 1).xyz;
-    t.p3 = texelFetch(triangles, offset + 2).xyz;
+    vec4 position1 = projection * cameraRotate * vec4(texelFetch(triangles, offset + 0).xyz, 1.0);
+    vec4 position2 = projection * cameraRotate * vec4(texelFetch(triangles, offset + 1).xyz, 1.0);
+    vec4 position3 = projection * cameraRotate * vec4(texelFetch(triangles, offset + 2).xyz, 1.0);
+    t.p1 = position1.xyz;
+    t.p2 = position2.xyz;
+    t.p3 = position3.xyz;
 
-    t.n1 = texelFetch(triangles, offset + 3).xyz;
-    t.n2 = texelFetch(triangles, offset + 4).xyz;
-    t.n3 = texelFetch(triangles, offset + 5).xyz;
+    vec4 normal1 = projection * cameraRotate * vec4(texelFetch(triangles, offset + 3).xyz, 1.0);
+    vec4 normal2 = projection * cameraRotate * vec4(texelFetch(triangles, offset + 4).xyz, 1.0);
+    vec4 normal3 = projection * cameraRotate * vec4(texelFetch(triangles, offset + 5).xyz, 1.0);
+    t.n1 = normal1.xyz;
+    t.n2 = normal2.xyz;
+    t.n3 = normal3.xyz;
 
     return t;
 }
@@ -208,10 +209,19 @@ BVHNode getBVHNode(int i) {
     node.n = int(leafInfo.x);
     node.index = int(leafInfo.y);
 
-    node.AA = texelFetch(nodes, offset + 2).xyz;
-    node.BB = texelFetch(nodes, offset + 3).xyz;
+    // node.AA = projection * cameraRotate * exelFetch(nodes, offset + 2).xyz;
+    // node.BB = projection * cameraRotate * texelFetch(nodes, offset + 3).xyz;
+    vec4 AA = projection * cameraRotate * vec4(texelFetch(nodes, offset + 2).xyz, 1.0);
+    vec4 BB = projection * cameraRotate * vec4(texelFetch(nodes, offset + 3).xyz, 1.0);
+    node.AA = AA.xyz;
+    node.BB = BB.xyz;
 
     return node;
+}
+
+vec3 getLightPosition(int i) {
+    int offset = i * SIZE_LIGHT;
+    return texelFetch(lightPositions, offset + 0).xyz;
 }
 
 // ----------------------------------------------------------------------------- //
@@ -350,99 +360,7 @@ HitResult hitBVH(Ray ray) {
 
 // ----------------------------------------------------------------------------- //
 
-float DistributionGGX(vec3 N, vec3 H, float roughness) {
-    float a2 = pow(roughness, 4.0);
-    float NdotH = clamp(dot(N, H), 0.0, 1.0);
-    float d = NdotH * NdotH * (a2 - 1.0) + 1.0;
-    return a2 / (PI * d * d);
-}
-
-float GeometrySchlickGGX(float NdotV, float roughness) {
-    NdotV = clamp(NdotV, 0.0, 1.0);
-    float k = (roughness + 1.0) * (roughness + 1.0) / 8.0;    
-    return NdotV / (NdotV * (1.0 - k) + k);
-}
-
-float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness) {
-    return GeometrySchlickGGX(dot(L, N), roughness) * GeometrySchlickGGX(dot(V, N), roughness);
-}
-
-vec3 fresnelSchlick(vec3 F0, vec3 V, vec3 H) {
-    float theta = clamp(dot(V, H), 0.0, 1.0);
-    return F0 + (1.0 - F0) * pow(1.0 - theta, 5.0);
-}
-
-vec3 PBRcolor(vec3 V, vec3 N, vec3 L, in Material material) {
-    // V - view N - normal L - wi
-    vec3 albedo = material.baseColor;
-    float NdotV = max(dot(N, V), 0.0);
-    vec3 F0 = vec3(0.04); 
-    F0 = mix(F0, albedo, material.metallic);
-
-    vec3 Lo = vec3(0.0);
-
-    vec3 H = normalize(V + L);
-    float NdotL = max(dot(N, L), 0.0); 
-
-    vec3 radiance = vec3(30, 20, 10);
-
-    float NDF = DistributionGGX(N, H, material.roughness);   
-    float G   = GeometrySmith(N, V, L, material.roughness);
-    vec3 F = fresnelSchlick(F0, V, H);
-
-    vec3 numerator    = NDF * G * F; 
-    float denominator = max((4.0 * NdotL * NdotV), 0.001);
-    vec3 BRDF = numerator / denominator;
-
-    Lo += BRDF * radiance * NdotL;
-    // vec3 color = Lo + vec3(0.001) * texture2D(uAlbedoMap, vTextureCoord).rgb;
-    vec3 color = Lo;
-
-    return color;
-}
-
-// ----------------------------------------------------------------------------- //
-
-vec2 toSphericalCoord(vec3 v) {
-    vec2 uv = vec2(atan(v.z, v.x), asin(v.y));
-    uv /= vec2(2.0 * PI, PI);
-    uv += 0.5;
-    uv.y = 1.0 - uv.y;
-    return uv;
-}
-
-vec3 hdrColor(vec3 L) {
-    vec2 uv = toSphericalCoord(normalize(L));
-    vec3 color = texture2D(hdrMap, uv).rgb;
-    return color;
-}
-
-float hdrPdf(vec3 L, int hdrResolution) {
-    vec2 uv = toSphericalCoord(normalize(L));
-
-    float pdf = texture2D(hdrCache, uv).b;
-    float theta = PI * (0.5 - uv.y);
-    float sin_theta = max(sin(theta), 1e-10);
-
-    float p_convert = float(hdrResolution * hdrResolution / 2) / (2.0 * PI * PI * sin_theta);  
-    
-    return pdf * p_convert;
-}
-// ----------------------------------------------------------------------------- //
-
 // Importance Sampling
-vec3 SampleHdr(float xi_1, float xi_2) {
-    vec2 xy = texture2D(hdrCache, vec2(xi_1, xi_2)).rg;
-    xy.y = 1.0 - xy.y; 
-
-    float phi = 2.0 * PI * (xy.x - 0.5);
-    float theta = PI * (xy.y - 0.5);
-
-    vec3 L = vec3(cos(theta)*cos(phi), sin(theta), cos(theta)*sin(phi));
-
-    return L;
-}
-
 vec3 SampleCosineHemisphere(float r1, float r2, vec3 N) {
     float r = sqrt(r1);
     float theta = r2 * 2.0 * PI;
@@ -458,112 +376,6 @@ float CosinePDF(vec3 L, vec3 N) {
     return dot(L, N) / PI;
 }
 
-vec3 SampleHemisphereGGX(float r1, float r2, out float pdf, vec3 V, float diffuse){
-    vec2 E = vec2(r1, r2);
-    float a2 = pow(diffuse, 4);
-    float Phi = 2 * PI * E.x;
-    float CosTheta = sqrt( (1 - E.y) / ( 1 + (a2 - 1) * E.y ) );
-    float SinTheta = sqrt( 1 - CosTheta * CosTheta );
-
-    vec3 H;
-    H.x = SinTheta * cos( Phi );
-    H.y = SinTheta * sin( Phi );
-    H.z = CosTheta;
-
-    float d = ( CosTheta * a2 - CosTheta ) * CosTheta + 1;
-    float D = a2 / ( PI * d * d );
-    vec3 L = normalize(H * 2.0f * dot(V, H) - V);
-    pdf = D * CosTheta / (4 * dot (V,H));
-    return L;
-}
-
-float GGXPDF(vec3 L, vec3 N, float diffuse) {
-    return 1.0f;
-}
-
-float PowerHeuristic(float a, float b) {
-    float t = a * a;
-    return t / (b*b + t);
-}
-
-vec3 SampleIndirectLight(float r1, float r2, float r3, out float pdf, vec3 V, vec3 N, Material material) {
-    float r_diffuse = (1.0 - material.metallic);
-    float r_specular = 1.0;
-    float r_sum = r_diffuse + r_specular;
-
-    float p_diffuse = r_diffuse / r_sum;
-    if(r3 < p_diffuse) {
-        vec3 L = SampleCosineHemisphere(r1, r2, N);
-        pdf = CosinePDF(L, N);
-        return L;
-    } else {
-        return SampleHemisphereGGX(r1, r2, pdf, V, material.roughness);
-    }
-}
-
-float IndirectLightPDF(vec3 L, vec3 N, Material material) {
-    // float r_diffuse = (1.0 - material.metallic);
-    // float r_specular = 1.0;
-    // float r_sum = r_diffuse + r_specular;
-
-    // float p_diffuse = r_diffuse / r_sum;
-    // float p_specular = r_specular / r_sum;
-
-    // float pdf_diffuse = CosinePDF(L, N);
-    // // float pdf_specular = GGXPDF(L, N, material.roughness);
-    // float pdf_specular = 0.0;
-
-    // return p_diffuse * pdf_diffuse + p_specular * pdf_specular;
-    return CosinePDF(L, N);
-}
-
-// ----------------------------------------------------------------------------- //
-#define N_SAMPLES 8
-#define M_SAMPLES 32
-
-// Restir
-Reservoir UpdateReservoir(Reservoir r, int x, float w) {
-    r.W += w;
-    r.M++;
-    if (rand() < (w / r.W)) {
-        r.y = x;
-    }
-    return r;
-}
-
-Reservoir ReservoirSampling() {
-    Reservoir r;
-    for(int i = 0; i < M_SAMPLES; ++i) {
-        // r.update(S[i], weight(S[i]))
-    }
-    return r;
-}
-
-Reservoir RIS() {
-    Reservoir r;
-    for(int i = 0; i < M_SAMPLES; ++i) {
-        // generate x_i
-        //r.Update
-    }
-    // r.W
-    return r;
-}
-
-Reservoir reservoirReus() {
-    Reservoir reservoir;
-    
-    // Generate initial candidate
-    
-    // Evaluate visibility for initial candidates
-
-    // Temporal reuse
-
-    // Spatial reuse
-
-
-    return reservoir;
-}
-
 // ----------------------------------------------------------------------------- //
 
 // Only 2 Bounce
@@ -575,65 +387,36 @@ vec3 pathTracing(HitResult hit, uint maxBounce) {
     for(uint bounce = 0u; bounce < maxBounce; bounce++) {
         vec3 V = -hit.viewDir;
         vec3 N = hit.normal;
-        float pdf_light;
-        float pdf_indirectLight;
-
-        // direct light
-        Ray hdrTestRay;
-        hdrTestRay.startPoint = hit.hitPoint;
-        hdrTestRay.direction = SampleHdr(rand(), rand());
-
-        if(dot(N, hdrTestRay.direction) > 0.0) {         
-            HitResult hdrHit = hitBVH(hdrTestRay);
-            
-            if(!hdrHit.isHit) {
-                vec3 L = hdrTestRay.direction;
-                vec3 color = hdrColor(L);
-                pdf_light = hdrPdf(L, hdrResolution);
-                vec3 f_r = PBRcolor(V, N, L, hit.material);
-
-                pdf_indirectLight = IndirectLightPDF(L, N, hit.material);
-                
-                float mis_weight = PowerHeuristic(pdf_light, pdf_indirectLight);
-                Lo += mis_weight * history * color * f_r * dot(N, L) / pdf_light;
-            }
-        }
-
-        // indirect light
+        float pdf;
+        
         vec2 uv = sobolVec2(frameCounter + 1u, bounce);
         uv = CranleyPattersonRotation(uv);
-        float r1 = uv.x;
-        float r2 = uv.y;
-        float r3 = rand();
 
-        vec3 wi = SampleIndirectLight(r1, r2, r3, pdf_indirectLight, V, N, hit.material);
-        float cosine_o = max(0, dot(V, N)); 
-        float cosine_i = max(0, dot(wi, N)); 
-        if(cosine_i <= 0.0) break;
+        vec3 L = SampleHemisphere(uv.x, uv.y);
+        L = toNormalHemisphere(L, N);
+
+        pdf = 1.0 / (2.0 * PI);
+        float cosine_o = max(0, dot(V, N));
+        float cosine_i = max(0, dot(L, N));
+
+        vec3 f_r = hit.material.baseColor / PI;  
 
         Ray randomRay;
         randomRay.startPoint = hit.hitPoint;
-        randomRay.direction = wi;
+        randomRay.direction = L;
         HitResult newHit = hitBVH(randomRay);
 
-        vec3 f_r = PBRcolor(V, N, wi, hit.material);
-        if(pdf_indirectLight <= 0.0) break;
-
         if(!newHit.isHit) {
-            vec3 color = hdrColor(wi);
-            float pdf_light = hdrPdf(wi, hdrResolution);
-
-            float mis_weight = PowerHeuristic(pdf_light, pdf_indirectLight);
-            Lo += mis_weight * history * color *  f_r * cosine_i / pdf_indirectLight;
-
+            vec3 skyColor = vec3(0);
+            Lo += history * skyColor * f_r * cosine_i / pdf;
             break;
         }
         
         vec3 Le = newHit.material.emissive;
-        Lo += history * Le * f_r * cosine_i / pdf_indirectLight;
+        Lo += history * Le * f_r * cosine_i / pdf;
         
         hit = newHit;
-        history *= f_r * cosine_i / pdf_indirectLight;
+        history *= f_r * cosine_i / pdf;
     }
     
     return Lo;
@@ -648,8 +431,9 @@ void main() {
     
     ray.startPoint = uCameraPos;
     for(int i = 0; i < spp; ++i) {
-        vec2 AA = vec2((rand() - 0.5) / float(width), (rand() - 0.5) / float(height));
-        vec4 dir = cameraRotate * vec4(pix.xy + AA, -1.5, 0.0);
+        vec2 offset = vec2((rand() - 0.5) / float(width), (rand() - 0.5) / float(height));
+        mat4 rotate = inverse(cameraRotate);
+        vec4 dir = vec4(pix.xy + offset, -1.5, 0.0);
         ray.direction = normalize(dir.xyz);
 
         // primary hit
@@ -657,7 +441,6 @@ void main() {
     
         if(!firstHit.isHit) {
             color += vec3(0, 0, 0);
-            color += hdrColor(ray.direction);
         } else {
             vec3 Le = firstHit.material.emissive;
             vec3 Li = pathTracing(firstHit, 2u);
