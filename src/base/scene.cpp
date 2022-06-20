@@ -38,13 +38,14 @@ Scene::Scene(const Options& options): Application(options) {
 
     {
         const std::string lightCubePath = "../media/plane.obj";
+        float rpos = -5.0f;
         
         _lightlist.ModelList.push_back(nullptr);
         _lightlist.ModelList[0].reset(new Model(lightCubePath));
         _lightlist.filepath.push_back(lightCubePath);
         _lightlist.visible.push_back(true);
         _lightlist.Color.push_back(glm::vec3(1.0));
-        _lightlist.ModelList[0]->position = glm::vec3(8.0f, 8.0f, 5.0f);
+        _lightlist.ModelList[0]->position = glm::vec3(8.0f, 8.0f, rpos + 5.0f);
         _lightlist.ModelList[0]->scale = glm::vec3(2.0f);
 
         _lightlist.ModelList.push_back(nullptr);
@@ -52,32 +53,8 @@ Scene::Scene(const Options& options): Application(options) {
         _lightlist.filepath.push_back(lightCubePath);
         _lightlist.visible.push_back(true);
         _lightlist.Color.push_back(glm::vec3(1.0));
-        _lightlist.ModelList[1]->position = glm::vec3(0.0f, 8.0f, 5.0f);
+        _lightlist.ModelList[1]->position = glm::vec3(0.0f, 8.0f, rpos + 5.0f);
         _lightlist.ModelList[1]->scale = glm::vec3(2.0f);
-
-        _lightlist.ModelList.push_back(nullptr);
-        _lightlist.ModelList[2].reset(new Model(lightCubePath));
-        _lightlist.filepath.push_back(lightCubePath);
-        _lightlist.visible.push_back(true);
-        _lightlist.Color.push_back(glm::vec3(1.0));
-        _lightlist.ModelList[2]->position = glm::vec3(8.0f, 8.0f, -5.0f);
-        _lightlist.ModelList[2]->scale = glm::vec3(2.0f);
-
-        _lightlist.ModelList.push_back(nullptr);
-        _lightlist.ModelList[3].reset(new Model(lightCubePath));
-        _lightlist.filepath.push_back(lightCubePath);
-        _lightlist.visible.push_back(true);
-        _lightlist.Color.push_back(glm::vec3(1.0));
-        _lightlist.ModelList[3]->position = glm::vec3(-8.0f, 8.0f, -5.0f);
-        _lightlist.ModelList[3]->scale = glm::vec3(2.0f);
-
-        _lightlist.ModelList.push_back(nullptr);
-        _lightlist.ModelList[4].reset(new Model(lightCubePath));
-        _lightlist.filepath.push_back(lightCubePath);
-        _lightlist.visible.push_back(true);
-        _lightlist.Color.push_back(glm::vec3(1.0));
-        _lightlist.ModelList[4]->position = glm::vec3(-8.0f, 8.0f, 5.0f);
-        _lightlist.ModelList[4]->scale = glm::vec3(2.0f);
     }
 
 	// init skybox
@@ -205,6 +182,11 @@ void Scene::initShader(){
     _RTRTShader->attachVertexShaderFromFile("../../src/shaders/PathTracingShader/RTRTvs.glsl");
     _RTRTShader->attachFragmentShaderFromFile("../../src/shaders/PathTracingShader/RTRTfs.glsl");
     _RTRTShader->link();
+
+    _deferShader.reset(new GLSLProgram);
+    _deferShader->attachVertexShaderFromFile("../../src/shaders/PathTracingShader/RTRTvs.glsl");
+    _deferShader->attachFragmentShaderFromFile("../../src/shaders/PathTracingShader/Deferfs.glsl");
+    _deferShader->link();
 }
 
 void Scene::initPathTracingModel(int index, Material m) {
@@ -228,9 +210,9 @@ void Scene::initPathTracingModel(int index, Material m) {
         t.p2 = vertices[indices[i + 1]].position;
         t.p3 = vertices[indices[i + 2]].position;
 
-        t.n1 = vertices[indices[i]].normal;
-        t.n2 = vertices[indices[i + 1]].normal;
-        t.n3 = vertices[indices[i + 2]].normal;
+        t.n1 = normalize(cross(t.p2 - t.p1, t.p3 - t.p1));
+        t.n2 = normalize(cross(t.p3 - t.p2, t.p1 - t.p2));
+        t.n3 = normalize(cross(t.p1 - t.p3, t.p2 - t.p3));
 
         // 传材质
         t.material = m;
@@ -1273,9 +1255,9 @@ void Scene::drawList(){
             _RTRTShader->setInt("Width",_windowWidth);
             _RTRTShader->setInt("Height",_windowHeight);
             
-            _RTRTShader->setInt("uFrameCount", frameCounter++);
-            _RTRTShader->setInt("nTriangles", nTriangles);
-            _RTRTShader->setInt("nNodes", nNodes);
+            _RTRTShader->setInt("frameCounter", frameCounter++);
+            // _RTRTShader->setInt("nTriangles", nTriangles);
+            // _RTRTShader->setInt("nNodes", nNodes);
 
             _fullscrennquad->draw();
             _skybox->draw(projection, view);
@@ -1288,14 +1270,17 @@ void Scene::drawList(){
             glActiveTexture(GL_TEXTURE5);_positiontexture->unbind();
             glActiveTexture(GL_TEXTURE6);glBindFramebuffer(GL_FRAMEBUFFER, 0);
             glActiveTexture(GL_TEXTURE7);glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+            // pass4
+
         }
     }
 }
 
 void Scene::PathTracing() {
-    vec3 viewPos = vec3(_camera->position.x, _camera->position.y - 10.0f, _camera->position.z + 60.0f);
+    vec3 viewPos = vec3(_camera->position.x, _camera->position.y, _camera->position.z);
     mat4 cameraRotate = _camera->getViewMatrix();
-    // cameraRotate = inverse(cameraRotate);
+    cameraRotate = inverse(cameraRotate);
     mat4 projection = _camera->getProjectionMatrix();
 
     glUseProgram(pass1.program);

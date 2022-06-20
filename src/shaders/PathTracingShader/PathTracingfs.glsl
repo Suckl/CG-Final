@@ -165,19 +165,13 @@ Triangle getTriangle(int i) {
     int offset = i * SIZE_TRIANGLE;
     Triangle t;
 
-    vec4 position1 = projection * cameraRotate * vec4(texelFetch(triangles, offset + 0).xyz, 1.0);
-    vec4 position2 = projection * cameraRotate * vec4(texelFetch(triangles, offset + 1).xyz, 1.0);
-    vec4 position3 = projection * cameraRotate * vec4(texelFetch(triangles, offset + 2).xyz, 1.0);
-    t.p1 = position1.xyz;
-    t.p2 = position2.xyz;
-    t.p3 = position3.xyz;
+    t.p1 = texelFetch(triangles, offset + 0).xyz;
+    t.p2 = texelFetch(triangles, offset + 1).xyz;
+    t.p3 = texelFetch(triangles, offset + 2).xyz;
 
-    vec4 normal1 = projection * cameraRotate * vec4(texelFetch(triangles, offset + 3).xyz, 1.0);
-    vec4 normal2 = projection * cameraRotate * vec4(texelFetch(triangles, offset + 4).xyz, 1.0);
-    vec4 normal3 = projection * cameraRotate * vec4(texelFetch(triangles, offset + 5).xyz, 1.0);
-    t.n1 = normal1.xyz;
-    t.n2 = normal2.xyz;
-    t.n3 = normal3.xyz;
+    t.n1 = texelFetch(triangles, offset + 3).xyz;
+    t.n2 = texelFetch(triangles, offset + 4).xyz;
+    t.n3 = texelFetch(triangles, offset + 5).xyz;
 
     return t;
 }
@@ -209,12 +203,8 @@ BVHNode getBVHNode(int i) {
     node.n = int(leafInfo.x);
     node.index = int(leafInfo.y);
 
-    // node.AA = projection * cameraRotate * exelFetch(nodes, offset + 2).xyz;
-    // node.BB = projection * cameraRotate * texelFetch(nodes, offset + 3).xyz;
-    vec4 AA = projection * cameraRotate * vec4(texelFetch(nodes, offset + 2).xyz, 1.0);
-    vec4 BB = projection * cameraRotate * vec4(texelFetch(nodes, offset + 3).xyz, 1.0);
-    node.AA = AA.xyz;
-    node.BB = BB.xyz;
+    node.AA = texelFetch(nodes, offset + 2).xyz;
+    node.BB = texelFetch(nodes, offset + 3).xyz;
 
     return node;
 }
@@ -407,7 +397,7 @@ vec3 pathTracing(HitResult hit, uint maxBounce) {
         HitResult newHit = hitBVH(randomRay);
 
         if(!newHit.isHit) {
-            vec3 skyColor = vec3(0);
+            vec3 skyColor = vec3(0, 0, 0);
             Lo += history * skyColor * f_r * cosine_i / pdf;
             break;
         }
@@ -432,8 +422,7 @@ void main() {
     ray.startPoint = uCameraPos;
     for(int i = 0; i < spp; ++i) {
         vec2 offset = vec2((rand() - 0.5) / float(width), (rand() - 0.5) / float(height));
-        mat4 rotate = inverse(cameraRotate);
-        vec4 dir = vec4(pix.xy + offset, -1.5, 0.0);
+        vec4 dir = cameraRotate * vec4(pix.xy + offset, -1.5, 0.0);
         ray.direction = normalize(dir.xyz);
 
         // primary hit

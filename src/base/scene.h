@@ -118,6 +118,7 @@ private:
     std::shared_ptr<GLSLProgram> _filterShader;
 
     std::shared_ptr<GLSLProgram> _RTRTShader;
+    std::shared_ptr<GLSLProgram> _deferShader;
 
     // SSR resources
     std::unique_ptr<Framebuffer> _depthfbo;
@@ -153,10 +154,6 @@ private:
     RenderPass pass1;
     RenderPass pass2;
     RenderPass pass3;
-
-    std::unique_ptr<Framebuffer> _pathTracingfbo;
-    std::unique_ptr<Framebuffer> _pass2fbo;
-    std::unique_ptr<Framebuffer> _pass3fbo;
 
     unsigned int frameCounter = 0;
 
