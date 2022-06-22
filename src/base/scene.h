@@ -84,7 +84,6 @@ class RenderPass {
 public:
     GLuint FBO = 0;
     GLuint vao, vbo;
-    GLuint program;
 };
 
 class Scene:public Application{
