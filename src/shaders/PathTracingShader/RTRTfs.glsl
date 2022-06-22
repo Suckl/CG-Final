@@ -556,6 +556,5 @@ void main() {
   vec3 color = L / (L + vec3(1.0));
   color = pow(clamp(L, vec3(0.0), vec3(1.0)), vec3(1.0 / 2.2));
 
-  // gl_FragColor = vec4(vec3(color.rgb), 1.0);
-  gl_FragData[0] = vec4(vec3(color.rgb), 1.0);
+  gl_FragColor = vec4(vec3(color.rgb), 1.0);
 }

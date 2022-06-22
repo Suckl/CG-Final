@@ -8,19 +8,16 @@ out vec4 fragColor;
 uniform uint frameCounter;
 uniform int nTriangles;
 uniform int nNodes;
-uniform int nLights;
 uniform int width;
 uniform int height;
 
 uniform samplerBuffer triangles;
 uniform samplerBuffer nodes;
-uniform samplerBuffer lightPositions;
 
 uniform sampler2D lastFrame;
 
 uniform vec3 uCameraPos;
 uniform mat4 cameraRotate;
-uniform mat4 projection;
 
 // ----------------------------------------------------------------------------- //
 
@@ -28,7 +25,6 @@ uniform mat4 projection;
 #define INF             233333.0
 #define SIZE_TRIANGLE   9
 #define SIZE_BVHNODE    4
-#define SIZE_LIGHT      1
 
 // ----------------------------------------------------------------------------- //
 
@@ -209,11 +205,6 @@ BVHNode getBVHNode(int i) {
     return node;
 }
 
-vec3 getLightPosition(int i) {
-    int offset = i * SIZE_LIGHT;
-    return texelFetch(lightPositions, offset + 0).xyz;
-}
-
 // ----------------------------------------------------------------------------- //
 
 HitResult hitTriangle(Triangle triangle, Ray ray) {
@@ -350,6 +341,65 @@ HitResult hitBVH(Ray ray) {
 
 // ----------------------------------------------------------------------------- //
 
+// PBR part
+float DistributionGGX(vec3 N, vec3 H, float roughness) {
+    float a2 = pow(roughness, 4.0);
+    float NdotH = clamp(dot(N, H), 0.0, 1.0);
+    float d = NdotH * NdotH * (a2 - 1.0) + 1.0;
+    return a2 / (PI * d * d);
+}
+
+float GeometrySchlickGGX(float NdotV, float roughness) {
+    NdotV = clamp(NdotV, 0.0, 1.0);
+    float k = (roughness + 1.0) * (roughness + 1.0) / 8.0;    
+    return NdotV / (NdotV * (1.0 - k) + k);
+}
+
+float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness) {
+    return GeometrySchlickGGX(dot(L, N), roughness) * GeometrySchlickGGX(dot(V, N), roughness);
+}
+
+vec3 fresnelSchlick(vec3 F0, vec3 V, vec3 H) {
+    float theta = clamp(dot(V, H), 0.0, 1.0);
+    return F0 + (1.0 - F0) * pow(1.0 - theta, 5.0);
+}
+
+vec3 PBRcolor(vec3 wi, vec3 wo, HitResult hit) {
+    float uRoughness = hit.material.roughness;
+    float uMetallic = hit.material.metallic;
+    vec3 albedo = hit.material.baseColor;
+
+    vec3 N = hit.normal;
+    vec3 V = normalize(wo);
+    float NdotV = max(dot(N, V), 0.0);
+
+    vec3 F0 = vec3(0.04); 
+    F0 = mix(F0, albedo, uMetallic);
+    vec3 KS = F0;
+    vec3 KD = vec3(1.0) - KS;
+    KD *= 1.0 - uMetallic;
+
+    vec3 Lo = vec3(0.0);
+
+    vec3 L = normalize(wi);
+    vec3 H = normalize(V + L);
+    float NdotL = max(dot(N, L), 0.0); 
+
+    float NDF = DistributionGGX(N, H, uRoughness);   
+    float G   = GeometrySmith(N, V, L, uRoughness); 
+    vec3 F = fresnelSchlick(F0, V, H);
+
+    vec3 numerator    = NDF * G * F; 
+    float denominator = max((4.0 * NdotL * NdotV), 0.001);
+    vec3 specular = numerator / denominator;
+
+    Lo += (KD * albedo / PI + specular) * NdotL;
+    vec3 color = Lo;
+    return color;
+}
+
+// ----------------------------------------------------------------------------- //
+
 // Importance Sampling
 vec3 SampleCosineHemisphere(float r1, float r2, vec3 N) {
     float r = sqrt(r1);
@@ -364,6 +414,26 @@ vec3 SampleCosineHemisphere(float r1, float r2, vec3 N) {
 
 float CosinePDF(vec3 L, vec3 N) {
     return dot(L, N) / PI;
+}
+
+vec3 SampleHemisphereGGX(float r1, float r2, out float pdf, vec3 N, vec3 V, float roughness){
+    vec2 E = vec2(r1, r2);
+
+    float a2 = pow(roughness,4);
+    float Phi = 2 * PI * E.x;
+    float CosTheta = sqrt( (1 - E.y) / ( 1 + (a2 - 1) * E.y ) );
+    float SinTheta = sqrt( 1 - CosTheta * CosTheta );
+
+    vec3 H;
+    H.x = SinTheta * cos( Phi );
+    H.y = SinTheta * sin( Phi );
+    H.z = CosTheta;
+
+    float d = ( CosTheta * a2 - CosTheta ) * CosTheta + 1;
+    float D = a2 / ( PI * d * d );
+    vec3 L = normalize(H * 2.0f * dot(V, H) - V);
+    pdf = D * CosTheta / (4 * dot (V, H));
+    return L;
 }
 
 // ----------------------------------------------------------------------------- //
@@ -382,14 +452,13 @@ vec3 pathTracing(HitResult hit, uint maxBounce) {
         vec2 uv = sobolVec2(frameCounter + 1u, bounce);
         uv = CranleyPattersonRotation(uv);
 
-        vec3 L = SampleHemisphere(uv.x, uv.y);
+        vec3 L = SampleHemisphereGGX(uv.x, uv.y, pdf, N, V, hit.material.roughness);
         L = toNormalHemisphere(L, N);
 
-        pdf = 1.0 / (2.0 * PI);
         float cosine_o = max(0, dot(V, N));
         float cosine_i = max(0, dot(L, N));
 
-        vec3 f_r = hit.material.baseColor / PI;  
+        vec3 f_r = PBRcolor(L, V, hit);
 
         Ray randomRay;
         randomRay.startPoint = hit.hitPoint;

@@ -84,7 +84,6 @@ class RenderPass {
 public:
     GLuint FBO = 0;
     GLuint vao, vbo;
-    std::vector<GLuint> colorAttachments;
     GLuint program;
 };
 
@@ -108,14 +107,15 @@ private:
     std::shared_ptr<GLSLProgram> _shadowMappingShader;
     std::shared_ptr<GLSLProgram> _pcfShader;
     std::shared_ptr<GLSLProgram> _pcssShader;
-
-    std::shared_ptr<GLSLProgram> _pointShadowShader;
-    std::shared_ptr<GLSLProgram> _omnidirectionalShader;
     std::shared_ptr<GLSLProgram> _lightCubeShader;
 
     std::shared_ptr<GLSLProgram> _gbufferShader;
     std::shared_ptr<GLSLProgram> _ssrShader;
     std::shared_ptr<GLSLProgram> _filterShader;
+
+    std::shared_ptr<GLSLProgram> _pathTracingShader;
+    std::shared_ptr<GLSLProgram> _pass2Shader;
+    std::shared_ptr<GLSLProgram> _pass3Shader;
 
     std::shared_ptr<GLSLProgram> _RTRTShader;
     std::shared_ptr<GLSLProgram> _deferShader;
@@ -137,7 +137,6 @@ private:
     std::unique_ptr<DataTexture> _beauty;
     std::unique_ptr<FullscreenQuad> _fullscrennquad;
 
-
     // Path Tracing resources
     std::vector<Triangle> triangles;
     BVHNode bvhNode;
@@ -148,12 +147,14 @@ private:
 
     GLuint _trianglesTextureBuffer;
     GLuint _nodesTextureBuffer;
-    GLuint _lightPosTextureBuffer;
     GLuint _lastFrame;
 
     RenderPass pass1;
     RenderPass pass2;
     RenderPass pass3;
+
+    std::vector<GLuint> pt1ColorAttachments;
+    std::vector<GLuint> pt2ColorAttachments;
 
     unsigned int frameCounter = 0;
 
@@ -168,12 +169,12 @@ private:
     const float cameraRotateSpeed = 0.1f;
 
     const unsigned int _shadowWidth = 2048, _shadowHeight = 2048;
+    const float _shadowNear = 0.1f, _shadowFar = 50.0f;
 
     void initShader();
     void initPathTracingResources();
     void initPathTracingModel(int index, Material m);
     void initPathTracingLight(int index, Material m);
-    void encodeTriangles();
 
     void drawList();
     void debugShadowMap(float near_plane, float far_plane);
@@ -198,6 +199,10 @@ private:
     void AddPrism(float r,float h,std::string name,int sides);
     void AddFrustum(float r1,float r2,float h,std::string name,int sides);
     void AddCone(float r,float h,std::string name);
+    int buildBVH(std::vector<Triangle>& triangles, std::vector<BVHNode>& nodes, int l, int r, int n);
 
-    void PathTracing();
+    // screen shot
+    void CreateScreenShot(char *prefix, int frame_id, unsigned int width, unsigned int height,
+        unsigned int color_max, unsigned int pixel_nbytes, GLubyte *pixels);
+    int ScreenShotNum = 0;
 };
