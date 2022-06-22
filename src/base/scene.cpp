@@ -38,12 +38,14 @@ Scene::Scene(const Options& options): Application(options) {
 
     {
         const std::string lightCubePath = "../media/plane.obj";
+        float rpos = -5.0f;
+        
         _lightlist.ModelList.push_back(nullptr);
         _lightlist.ModelList[0].reset(new Model(lightCubePath));
         _lightlist.filepath.push_back(lightCubePath);
         _lightlist.visible.push_back(true);
         _lightlist.Color.push_back(glm::vec3(1.0));
-        _lightlist.ModelList[0]->position = glm::vec3(8.0f, 8.0f, 5.0f);
+        _lightlist.ModelList[0]->position = glm::vec3(8.0f, 8.0f, rpos + 5.0f);
         _lightlist.ModelList[0]->scale = glm::vec3(2.0f);
 
         _lightlist.ModelList.push_back(nullptr);
@@ -51,32 +53,8 @@ Scene::Scene(const Options& options): Application(options) {
         _lightlist.filepath.push_back(lightCubePath);
         _lightlist.visible.push_back(true);
         _lightlist.Color.push_back(glm::vec3(1.0));
-        _lightlist.ModelList[1]->position = glm::vec3(0.0f, 8.0f, 5.0f);
-        _lightlist.ModelList[1]->scale = glm::vec3(2.0f);
-
-        _lightlist.ModelList.push_back(nullptr);
-        _lightlist.ModelList[2].reset(new Model(lightCubePath));
-        _lightlist.filepath.push_back(lightCubePath);
-        _lightlist.visible.push_back(true);
-        _lightlist.Color.push_back(glm::vec3(1.0));
-        _lightlist.ModelList[2]->position = glm::vec3(8.0f, 8.0f, -5.0f);
-        _lightlist.ModelList[2]->scale = glm::vec3(2.0f);
-
-        // _lightlist.ModelList.push_back(nullptr);
-        // _lightlist.ModelList[3].reset(new Model(lightCubePath));
-        // _lightlist.filepath.push_back(lightCubePath);
-        // _lightlist.visible.push_back(true);
-        // _lightlist.Color.push_back(glm::vec3(1.0));
-        // _lightlist.ModelList[3]->position = glm::vec3(-8.0f, 8.0f, -2-5.0f);
-        // _lightlist.ModelList[3]->scale = glm::vec3(2.0f);
-
-        // _lightlist.ModelList.push_back(nullptr);
-        // _lightlist.ModelList[4].reset(new Model(lightCubePath));
-        // _lightlist.filepath.push_back(lightCubePath);
-        // _lightlist.visible.push_back(true);
-        // _lightlist.Color.push_back(glm::vec3(1.0));
-        // _lightlist.ModelList[4]->position = glm::vec3(-8.0f, 8.0f, 5.0f);
-        // _lightlist.ModelList[4]->scale = glm::vec3(2.0f);
+        _lightlist.ModelList[1]->position = glm::vec3(0.0f, 13.5f, rpos + 5.0f);
+        _lightlist.ModelList[1]->scale = glm::vec3(4.0f, 0.5f, 4.0f);
     }
 
 	// init skybox
@@ -126,6 +104,7 @@ Scene::Scene(const Options& options): Application(options) {
     _gbufferfbo->attach(*_colortexture,GL_COLOR_ATTACHMENT4);
     _gbufferfbo->attach(*_positiontexture,GL_COLOR_ATTACHMENT5);
     _gbufferfbo->unbind();
+
     // init filterFBO
     _filterfbo.reset(new Framebuffer);
     _beauty.reset(new DataTexture(GL_RGBA, _windowWidth, _windowHeight, GL_RGBA, GL_FLOAT));
@@ -135,6 +114,79 @@ Scene::Scene(const Options& options): Application(options) {
     _filterfbo->attach(*_beauty,GL_COLOR_ATTACHMENT0);
     _filterfbo->attach(*_depthfilter,GL_DEPTH_ATTACHMENT);
     _filterfbo->unbind();
+
+    // init Path Tracing Color Attachments
+    pt1ColorAttachments.push_back(getTextureRGB32F(_windowWidth, _windowHeight));
+    pt1ColorAttachments.push_back(getTextureRGB32F(_windowWidth, _windowHeight));
+    pt1ColorAttachments.push_back(getTextureRGB32F(_windowWidth, _windowHeight));
+    
+    std::vector<vec3> square = { vec3(-1, -1, 0), vec3(1, -1, 0), vec3(-1, 1, 0), vec3(1, 1, 0), vec3(-1, 1, 0), vec3(1, -1, 0) };
+    std::vector<GLuint> attachments;
+    
+    // pass 1
+    glGenFramebuffers(1, &pass1.FBO);
+    glBindFramebuffer(GL_FRAMEBUFFER, pass1.FBO);
+
+    glGenBuffers(1, &pass1.vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, pass1.vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vec3) * square.size(), NULL, GL_STATIC_DRAW);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vec3) * square.size(), &square[0]);
+
+    glGenVertexArrays(1, &pass1.vao);
+    glBindVertexArray(pass1.vao);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (GLvoid*)0);
+
+    for (int i = 0; i < pt1ColorAttachments.size(); i++) {
+        glBindTexture(GL_TEXTURE_2D, pt1ColorAttachments[i]);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0 + i, GL_TEXTURE_2D, pt1ColorAttachments[i], 0);
+        attachments.push_back(GL_COLOR_ATTACHMENT0 + i);
+    }
+    glDrawBuffers(attachments.size(), &attachments[0]);
+    
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    // pass 2
+    _lastFrame = getTextureRGB32F(_windowWidth, _windowHeight);
+    pt2ColorAttachments.push_back(_lastFrame);
+
+    glGenFramebuffers(1, &pass2.FBO);
+    glBindFramebuffer(GL_FRAMEBUFFER, pass2.FBO);
+
+    glGenBuffers(1, &pass2.vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, pass2.vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vec3) * square.size(), NULL, GL_STATIC_DRAW);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vec3) * square.size(), &square[0]);
+
+    glGenVertexArrays(1, &pass2.vao);
+    glBindVertexArray(pass2.vao);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (GLvoid*)0);
+
+    attachments.clear();
+    for (int i = 0; i < pt2ColorAttachments.size(); i++) {
+        glBindTexture(GL_TEXTURE_2D, pt2ColorAttachments[i]);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0 + i, GL_TEXTURE_2D, pt2ColorAttachments[i], 0);
+        attachments.push_back(GL_COLOR_ATTACHMENT0 + i);
+    }
+    glDrawBuffers(attachments.size(), &attachments[0]);
+    
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    // pass 3
+    glBindFramebuffer(GL_FRAMEBUFFER, pass3.FBO);
+
+    glGenBuffers(1, &pass3.vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, pass3.vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vec3) * square.size(), NULL, GL_STATIC_DRAW);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vec3) * square.size(), &square[0]);
+
+    glGenVertexArrays(1, &pass3.vao);
+    glBindVertexArray(pass3.vao);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (GLvoid*)0);
+    
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
 Scene::~Scene() {
@@ -169,17 +221,6 @@ void Scene::initShader(){
     _pcssShader->attachFragmentShaderFromFile("../../src/shaders/ShadowShader/PCSSfs.glsl");
     _pcssShader->link();
 
-    _pointShadowShader.reset(new GLSLProgram);
-    _pointShadowShader->attachVertexShaderFromFile("../../src/shaders/ShadowShader/PointShadowsvs.glsl");
-    _pointShadowShader->attachGeometryShaderFromFile("../../src/shaders/ShadowShader/PointShadowsgs.glsl");
-    _pointShadowShader->attachFragmentShaderFromFile("../../src/shaders/ShadowShader/PointShadowsfs.glsl");
-    _pointShadowShader->link();
-
-    _omnidirectionalShader.reset(new GLSLProgram);
-    _omnidirectionalShader->attachVertexShaderFromFile("../../src/shaders/ShadowShader/OmnidirectionalShadowvs.glsl");
-    _omnidirectionalShader->attachFragmentShaderFromFile("../../src/shaders/ShadowShader/OmnidirectionalShadowfs.glsl");
-    _omnidirectionalShader->link();
-
     _lightCubeShader.reset(new GLSLProgram);
     _lightCubeShader->attachVertexShaderFromFile("../../src/shaders/ShadowShader/LightCubevs.glsl");
     _lightCubeShader->attachFragmentShaderFromFile("../../src/shaders/ShadowShader/LightCubefs.glsl");
@@ -200,6 +241,25 @@ void Scene::initShader(){
     _filterShader->attachFragmentShaderFromFile("../../src/shaders/SSRshader/Filterfs.glsl");
     _filterShader->link();
 
+    _pathTracingShader.reset(new GLSLProgram);
+    _pathTracingShader->attachVertexShaderFromFile("../../src/shaders/PathTracingShader/PathTracingvs.glsl");
+    _pathTracingShader->attachFragmentShaderFromFile("../../src/shaders/PathTracingShader/PathTracingfs.glsl");
+    _pathTracingShader->link();
+
+    _pass2Shader.reset(new GLSLProgram);
+    _pass2Shader->attachVertexShaderFromFile("../../src/shaders/PathTracingShader/PathTracingvs.glsl");
+    _pass2Shader->attachFragmentShaderFromFile("../../src/shaders/PathTracingShader/Pass2fs.glsl");
+    _pass2Shader->link();
+
+    _pass3Shader.reset(new GLSLProgram);
+    _pass3Shader->attachVertexShaderFromFile("../../src/shaders/PathTracingShader/PathTracingvs.glsl");
+    _pass3Shader->attachFragmentShaderFromFile("../../src/shaders/PathTracingShader/Pass3fs.glsl");
+    _pass3Shader->link();
+
+    _RTRTShader.reset(new GLSLProgram);
+    _RTRTShader->attachVertexShaderFromFile("../../src/shaders/PathTracingShader/RTRTvs.glsl");
+    _RTRTShader->attachFragmentShaderFromFile("../../src/shaders/PathTracingShader/RTRTfs.glsl");
+    _RTRTShader->link();
 }
 
 void Scene::initPathTracingModel(int index, Material m) {
@@ -210,7 +270,7 @@ void Scene::initPathTracingModel(int index, Material m) {
     mat4 view = _camera->getViewMatrix();
     mat4 projection = _camera->getProjectionMatrix();
     for(auto& v : vertices) {
-        v.position = projection * view * model * glm::vec4(v.position, 1.0f);
+        v.position = model * glm::vec4(v.position, 1.0f);
     }
 
     // 构建 Triangle 对象数组
@@ -223,9 +283,9 @@ void Scene::initPathTracingModel(int index, Material m) {
         t.p2 = vertices[indices[i + 1]].position;
         t.p3 = vertices[indices[i + 2]].position;
 
-        t.n1 = vertices[indices[i]].normal;
-        t.n2 = vertices[indices[i + 1]].normal;
-        t.n3 = vertices[indices[i + 2]].normal;
+        t.n1 = normalize(cross(t.p2 - t.p1, t.p3 - t.p1));
+        t.n2 = normalize(cross(t.p3 - t.p2, t.p1 - t.p2));
+        t.n3 = normalize(cross(t.p1 - t.p3, t.p2 - t.p3));
 
         // 传材质
         t.material = m;
@@ -240,7 +300,7 @@ void Scene::initPathTracingLight(int index, Material m) {
     mat4 view = _camera->getViewMatrix();
     mat4 projection = _camera->getProjectionMatrix();
     for(auto& v : vertices) {
-        v.position = projection * view * model * glm::vec4(v.position, 1.0f);
+        v.position = model * glm::vec4(v.position, 1.0f);
     }
 
     // 构建 Triangle 对象数组
@@ -262,26 +322,25 @@ void Scene::initPathTracingLight(int index, Material m) {
     }
 }
 
-int buildBVHwithSAH(std::vector<Triangle>& triangles, std::vector<BVHNode>& nodes, int l, int r, int n) {
+int Scene::buildBVH(std::vector<Triangle>& triangles, std::vector<BVHNode>& nodes, int l, int r, int n) {
     if (l > r) return 0;
 
-    const float INF = 1145141919.0f;
     nodes.push_back(BVHNode());
-    int id = nodes.size() - 1;   
+    int id = nodes.size() - 1;
     nodes[id].left = nodes[id].right = nodes[id].n = nodes[id].index = 0;
     nodes[id].AA = vec3(1145141919, 1145141919, 1145141919);
     nodes[id].BB = vec3(-1145141919, -1145141919, -1145141919);
 
-    // 计算 AABB
     for (int i = l; i <= r; i++) {
-        // 最小点 AA
+        // AA
         float minx = min(triangles[i].p1.x, min(triangles[i].p2.x, triangles[i].p3.x));
         float miny = min(triangles[i].p1.y, min(triangles[i].p2.y, triangles[i].p3.y));
         float minz = min(triangles[i].p1.z, min(triangles[i].p2.z, triangles[i].p3.z));
         nodes[id].AA.x = min(nodes[id].AA.x, minx);
         nodes[id].AA.y = min(nodes[id].AA.y, miny);
         nodes[id].AA.z = min(nodes[id].AA.z, minz);
-        // 最大点 BB
+
+        // BB
         float maxx = max(triangles[i].p1.x, max(triangles[i].p2.x, triangles[i].p3.x));
         float maxy = max(triangles[i].p1.y, max(triangles[i].p2.y, triangles[i].p3.y));
         float maxz = max(triangles[i].p1.z, max(triangles[i].p2.z, triangles[i].p3.z));
@@ -290,105 +349,25 @@ int buildBVHwithSAH(std::vector<Triangle>& triangles, std::vector<BVHNode>& node
         nodes[id].BB.z = max(nodes[id].BB.z, maxz);
     }
 
-    // 不多于 n 个三角形 返回叶子节点
     if ((r - l + 1) <= n) {
         nodes[id].n = r - l + 1;
         nodes[id].index = l;
         return id;
     }
 
-    // 否则递归建树
-    float Cost = INF;
-    int Axis = 0;
-    int Split = (l + r) / 2;
-    for (int axis = 0; axis < 3; axis++) {
-        // 分别按 x，y，z 轴排序
-        if (axis == 0) std::sort(&triangles[0] + l, &triangles[0] + r + 1, cmpx);
-        if (axis == 1) std::sort(&triangles[0] + l, &triangles[0] + r + 1, cmpy);
-        if (axis == 2) std::sort(&triangles[0] + l, &triangles[0] + r + 1, cmpz);
+    float lenx = nodes[id].BB.x - nodes[id].AA.x;
+    float leny = nodes[id].BB.y - nodes[id].AA.y;
+    float lenz = nodes[id].BB.z - nodes[id].AA.z;
+    if (lenx >= leny && lenx >= lenz)
+        std::sort(triangles.begin() + l, triangles.begin() + r + 1, cmpx);
+    if (leny >= lenx && leny >= lenz)
+        std::sort(triangles.begin() + l, triangles.begin() + r + 1, cmpy);
+    if (lenz >= lenx && lenz >= leny)
+        std::sort(triangles.begin() + l, triangles.begin() + r + 1, cmpz);
 
-        // leftMax[i]: [l, i] 中最大的 xyz 值
-        // leftMin[i]: [l, i] 中最小的 xyz 值
-        std::vector<vec3> leftMax(r - l + 1, vec3(-INF, -INF, -INF));
-        std::vector<vec3> leftMin(r - l + 1, vec3(INF, INF, INF));
-        // 计算前缀 注意 i-l 以对齐到下标 0
-        for (int i = l; i <= r; i++) {
-            Triangle& t = triangles[i];
-            int bias = (i == l) ? 0 : 1;  // 第一个元素特殊处理
-
-            leftMax[i - l].x = max(leftMax[i - l - bias].x, max(t.p1.x, max(t.p2.x, t.p3.x)));
-            leftMax[i - l].y = max(leftMax[i - l - bias].y, max(t.p1.y, max(t.p2.y, t.p3.y)));
-            leftMax[i - l].z = max(leftMax[i - l - bias].z, max(t.p1.z, max(t.p2.z, t.p3.z)));
-
-            leftMin[i - l].x = min(leftMin[i - l - bias].x, min(t.p1.x, min(t.p2.x, t.p3.x)));
-            leftMin[i - l].y = min(leftMin[i - l - bias].y, min(t.p1.y, min(t.p2.y, t.p3.y)));
-            leftMin[i - l].z = min(leftMin[i - l - bias].z, min(t.p1.z, min(t.p2.z, t.p3.z)));
-        }
-
-        // rightMax[i]: [i, r] 中最大的 xyz 值
-        // rightMin[i]: [i, r] 中最小的 xyz 值
-        std::vector<vec3> rightMax(r - l + 1, vec3(-INF, -INF, -INF));
-        std::vector<vec3> rightMin(r - l + 1, vec3(INF, INF, INF));
-        // 计算后缀 注意 i-l 以对齐到下标 0
-        for (int i = r; i >= l; i--) {
-            Triangle& t = triangles[i];
-            int bias = (i == r) ? 0 : 1;  // 第一个元素特殊处理
-
-            rightMax[i - l].x = max(rightMax[i - l + bias].x, max(t.p1.x, max(t.p2.x, t.p3.x)));
-            rightMax[i - l].y = max(rightMax[i - l + bias].y, max(t.p1.y, max(t.p2.y, t.p3.y)));
-            rightMax[i - l].z = max(rightMax[i - l + bias].z, max(t.p1.z, max(t.p2.z, t.p3.z)));
-
-            rightMin[i - l].x = min(rightMin[i - l + bias].x, min(t.p1.x, min(t.p2.x, t.p3.x)));
-            rightMin[i - l].y = min(rightMin[i - l + bias].y, min(t.p1.y, min(t.p2.y, t.p3.y)));
-            rightMin[i - l].z = min(rightMin[i - l + bias].z, min(t.p1.z, min(t.p2.z, t.p3.z)));
-        }
-
-        // 遍历寻找分割
-        float cost = INF;
-        int split = l;
-        for (int i = l; i <= r - 1; i++) {
-            float lenx, leny, lenz;
-            // 左侧 [l, i]
-            vec3 leftAA = leftMin[i - l];
-            vec3 leftBB = leftMax[i - l];
-            lenx = leftBB.x - leftAA.x;
-            leny = leftBB.y - leftAA.y;
-            lenz = leftBB.z - leftAA.z;
-            float leftS = 2.0 * ((lenx * leny) + (lenx * lenz) + (leny * lenz));
-            float leftCost = leftS * (i - l + 1);
-
-            // 右侧 [i+1, r]
-            vec3 rightAA = rightMin[i + 1 - l];
-            vec3 rightBB = rightMax[i + 1 - l];
-            lenx = rightBB.x - rightAA.x;
-            leny = rightBB.y - rightAA.y;
-            lenz = rightBB.z - rightAA.z;
-            float rightS = 2.0 * ((lenx * leny) + (lenx * lenz) + (leny * lenz));
-            float rightCost = rightS * (r - i);
-
-            // 记录每个分割的最小答案
-            float totalCost = leftCost + rightCost;
-            if (totalCost < cost) {
-                cost = totalCost;
-                split = i;
-            }
-        }
-        // 记录每个轴的最佳答案
-        if (cost < Cost) {
-            Cost = cost;
-            Axis = axis;
-            Split = split;
-        }
-    }
-
-    // 按最佳轴分割
-    if (Axis == 0) std::sort(&triangles[0] + l, &triangles[0] + r + 1, cmpx);
-    if (Axis == 1) std::sort(&triangles[0] + l, &triangles[0] + r + 1, cmpy);
-    if (Axis == 2) std::sort(&triangles[0] + l, &triangles[0] + r + 1, cmpz);
-
-    // 递归
-    int left  = buildBVHwithSAH(triangles, nodes, l, Split, n);
-    int right = buildBVHwithSAH(triangles, nodes, Split + 1, r, n);
+    int mid = (l + r) / 2;
+    int left = buildBVH(triangles, nodes, l, mid, n);
+    int right = buildBVH(triangles, nodes, mid + 1, r, n);
 
     nodes[id].left = left;
     nodes[id].right = right;
@@ -412,39 +391,43 @@ void Scene::initPathTracingResources() {
         initPathTracingModel(i, m);
     }
 
-    int nTriangles = triangles.size();
-    
-    std::cout << "Loading Model Finish: " << nTriangles << " triangles" << std::endl;
-
     bvhNode.left = 255;
     bvhNode.right = 128;
     bvhNode.n = 30;
     bvhNode.AA = vec3(1, 1, 0);
     bvhNode.BB = vec3(0, 1, 0);
     std::vector<BVHNode> nodes{ bvhNode };
-    // buildBVH(triangles, nodes, 0, triangles.size() - 1, 8);
-    buildBVHwithSAH(triangles, nodes, 0, triangles.size() - 1, 8);
-    int nNodes = nodes.size();
-    std::cout << "BVH Construction Finish: " << nNodes << " nodes" << std::endl;
+    buildBVH(triangles, nodes, 0, triangles.size() - 1, 8);
+    
+    nTriangles = triangles.size();
+    nNodes = nodes.size();
 
-    triangles_encoded.resize(nTriangles);
-    for (int i = 0; i < nTriangles; i++) {
+    triangles_encoded.resize(triangles.size());
+    for (int i = 0; i < triangles.size(); i++) {
         Triangle& t = triangles[i];
         Material& m = t.material;
-        // 顶点位置
+
         triangles_encoded[i].p1 = t.p1;
         triangles_encoded[i].p2 = t.p2;
         triangles_encoded[i].p3 = t.p3;
-        // 顶点法线
+
         triangles_encoded[i].n1 = t.n1;
         triangles_encoded[i].n2 = t.n2;
         triangles_encoded[i].n3 = t.n3;
-        // 材质
+
         triangles_encoded[i].emissive = m.emissive;
         triangles_encoded[i].baseColor = m.baseColor;
 
         triangles_encoded[i].material = vec3(m.roughness, m.metallic, m.specular);
     }
+
+    GLuint tbo;
+    glGenBuffers(1, &tbo);
+    glBindBuffer(GL_TEXTURE_BUFFER, tbo);
+    glBufferData(GL_TEXTURE_BUFFER, triangles_encoded.size() * sizeof(Triangle_encoded), &triangles_encoded[0], GL_STATIC_DRAW);
+    glGenTextures(1, &_trianglesTextureBuffer);
+    glBindTexture(GL_TEXTURE_BUFFER, _trianglesTextureBuffer);
+    glTexBuffer(GL_TEXTURE_BUFFER, GL_RGB32F, tbo);
 
     nodes_encoded.resize(nNodes);
     for (int i = 0; i < nNodes; i++) {
@@ -453,50 +436,13 @@ void Scene::initPathTracingResources() {
         nodes_encoded[i].AA = nodes[i].AA;
         nodes_encoded[i].BB = nodes[i].BB;
     }
-    std::cout << "Encode Finish" << std::endl;
 
-    // 三角形数组
-    GLuint tbo0;
-    glGenBuffers(1, &tbo0);
-    glBindBuffer(GL_TEXTURE_BUFFER, tbo0);
-    glBufferData(GL_TEXTURE_BUFFER, triangles_encoded.size() * sizeof(Triangle_encoded), &triangles_encoded[0], GL_STATIC_DRAW);
-    glGenTextures(1, &_trianglesTextureBuffer);
-    glBindTexture(GL_TEXTURE_BUFFER, _trianglesTextureBuffer);
-    glTexBuffer(GL_TEXTURE_BUFFER, GL_RGB32F, tbo0);
-
-    // BVHNode 数组
-    GLuint tbo1;
-    glGenBuffers(1, &tbo1);
-    glBindBuffer(GL_TEXTURE_BUFFER, tbo1);
+    glGenBuffers(1, &tbo);
+    glBindBuffer(GL_TEXTURE_BUFFER, tbo);
     glBufferData(GL_TEXTURE_BUFFER, nodes_encoded.size() * sizeof(BVHNode_encoded), &nodes_encoded[0], GL_STATIC_DRAW);
     glGenTextures(1, &_nodesTextureBuffer);
     glBindTexture(GL_TEXTURE_BUFFER, _nodesTextureBuffer);
-    glTexBuffer(GL_TEXTURE_BUFFER, GL_RGB32F, tbo1);
-
-    pass1.program = getShaderProgram("../../src/shaders/PathTracingShader/PathTracingfs.glsl", 
-        "../../src/shaders/PathTracingShader/PathTracingvs.glsl");
-    pass1.colorAttachments.push_back(getTextureRGB32F(pass1.width, pass1.height));
-    pass1.colorAttachments.push_back(getTextureRGB32F(pass1.width, pass1.height));
-    pass1.colorAttachments.push_back(getTextureRGB32F(pass1.width, pass1.height));
-    pass1.bindData();
-   
-    glUseProgram(pass1.program);
-    glUniform1i(glGetUniformLocation(pass1.program, "nTriangles"), triangles.size());
-    glUniform1i(glGetUniformLocation(pass1.program, "nNodes"), nodes.size());
-    glUniform1i(glGetUniformLocation(pass1.program, "width"), pass1.width);
-    glUniform1i(glGetUniformLocation(pass1.program, "height"), pass1.height);
-    glUseProgram(0);
-
-    pass2.program = getShaderProgram("../../src/shaders/PathTracingShader/Pass2fs.glsl", 
-        "../../src/shaders/PathTracingShader/PathTracingvs.glsl");
-    _lastFrame = getTextureRGB32F(pass2.width, pass2.height);
-    pass2.colorAttachments.push_back(_lastFrame);
-    pass2.bindData();
-
-    pass3.program = getShaderProgram("../../src/shaders/PathTracingShader/Pass3fs.glsl", 
-        "../../src/shaders/PathTracingShader/PathTracingvs.glsl");
-    pass3.bindData(true);
-
+    glTexBuffer(GL_TEXTURE_BUFFER, GL_RGB32F, tbo);
 }
 
 void Scene::handleInput() {
@@ -504,7 +450,7 @@ void Scene::handleInput() {
 	const float angluarVelocity = 0.1f;
 	const float angle = angluarVelocity * static_cast<float>(_deltaTime);
 	const glm::vec3 axis = glm::vec3(0.0f, 1.0f, 0.0f);
-    _objectlist.ModelList[0]->rotation = glm::angleAxis(angle, axis) * _objectlist.ModelList[0]->rotation;
+    // _objectlist.ModelList[0]->rotation = glm::angleAxis(angle, axis) * _objectlist.ModelList[0]->rotation;
     if (_keyboardInput.keyStates[GLFW_KEY_ESCAPE] != GLFW_RELEASE) {
 		glfwSetWindowShouldClose(_window, true);
 		return;
@@ -580,8 +526,6 @@ void Scene::handleInput() {
 		_camera->rotation = glm::normalize(glm::quat{ cos(angle / 2),axis.x*sin(angle / 2),axis.y*sin(angle / 2),axis.z*sin(angle / 2) }*_camera->rotation);
 		_mouseInput.move.yOld = _mouseInput.move.yCurrent;
 	}
-
-
 }
 
 void Scene::renderFrame() {
@@ -592,7 +536,6 @@ void Scene::renderFrame() {
 	const glm::mat4 projection = _camera->getProjectionMatrix();
 	const glm::mat4 view = _camera->getViewMatrix();
 
- 
 	// draw scene
 	drawList();
 
@@ -721,9 +664,7 @@ void Scene::drawList(){
             glm::mat4 lightProjection, lightView, lightMatrix;
             float size = 50.0f;
             
-            lightProjection = glm::ortho(-size, size, -size, size, 0.1f, 100.0f);
-            // lightProjection =glm::perspective(glm::radians(45.0f), 1.0f,0.1f, 100.0f);
-            // lightView = glm::lookAt(lightPos, lightPos + LightList[0]->getFront(), LightList[0]->getUp());
+            lightProjection = glm::ortho(-size, size, -size, size, _shadowNear, _shadowFar);
             lightView = glm::lookAt(lightPos, glm::vec3(0.0f), glm::vec3(0.0, 1.0, 0.0));;
             lightMatrix = lightProjection * lightView;
 
@@ -801,9 +742,7 @@ void Scene::drawList(){
             glm::mat4 lightProjection, lightView, lightMatrix;
             float size = 50.0f;
             
-            lightProjection = glm::ortho(-size, size, -size, size, 0.1f, 100.0f);
-            // lightProjection =glm::perspective(glm::radians(90.0f), 1.0f,0.1f, 100.0f);
-            // lightView = glm::lookAt(lightPos, lightPos + LightList[0]->getFront(), LightList[0]->getUp());
+            lightProjection = glm::ortho(-size, size, -size, size, _shadowNear, _shadowFar);
             lightView = glm::lookAt(lightPos, glm::vec3(0.0f), glm::vec3(0.0, 1.0, 0.0));
             lightMatrix = lightProjection * lightView;
 
@@ -878,8 +817,7 @@ void Scene::drawList(){
             glm::mat4 lightProjection, lightView, lightMatrix;
             float size = 50.0f;
             
-            lightProjection = glm::ortho(-size, size, -size, size, 0.1f, 100.0f);
-            //lightView = glm::lookAt(lightPos, lightPos + LightList[0]->getFront(), LightList[0]->getUp());
+            lightProjection = glm::ortho(-size, size, -size, size, _shadowNear, _shadowFar);
             lightView = glm::lookAt(lightPos, glm::vec3(0.0f), glm::vec3(0.0, 1.0, 0.0));
             lightMatrix = lightProjection * lightView;
 
@@ -953,7 +891,7 @@ void Scene::drawList(){
             glm::mat4 lightProjection, lightView, lightMatrix;
             float size = 50.0f;
             
-            lightProjection = glm::ortho(-size, size, -size, size, 0.1f, 100.0f);
+            lightProjection = glm::ortho(-size, size, -size, size, _shadowNear, _shadowFar);
             lightView = glm::lookAt(lightPos, glm::vec3(0.0f), glm::vec3(0.0, 1.0, 0.0));
             lightMatrix = lightProjection * lightView;
 
@@ -1051,7 +989,7 @@ void Scene::drawList(){
             glm::mat4 lightProjection, lightView, lightMatrix;
             float size = 50.0f;
             
-            lightProjection = glm::ortho(-size, size, -size, size, 0.1f, 100.0f);
+            lightProjection = glm::ortho(-size, size, -size, size, _shadowNear, _shadowFar);
             lightView = glm::lookAt(lightPos, glm::vec3(0.0f), glm::vec3(0.0, 1.0, 0.0));
             lightMatrix = lightProjection * lightView;
 
@@ -1168,38 +1106,214 @@ void Scene::drawList(){
         break;
 
         case ShadowRenderMode::Path_Tracing: {
-            PathTracing();
+            vec3 viewPos = vec3(_camera->position.x, _camera->position.y, _camera->position.z - 10.0f);
+            mat4 cameraRotate = _camera->getViewMatrix();
+            cameraRotate = inverse(cameraRotate);
+
+            // pass 1
+            _pathTracingShader->use();
+
+            glUniform1ui(glGetUniformLocation(pass1.program, "frameCounter"), frameCounter++);
+            _pathTracingShader->setInt("width", _windowWidth);
+            _pathTracingShader->setInt("height", _windowHeight);
+
+            _pathTracingShader->setVec3("uCameraPos", viewPos);
+            _pathTracingShader->setMat4("cameraRotate", cameraRotate);
+
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_BUFFER, _trianglesTextureBuffer);
+            glUniform1i(glGetUniformLocation(_pathTracingShader->_handle, "triangles"), 0);
+            glActiveTexture(GL_TEXTURE1);
+            glBindTexture(GL_TEXTURE_BUFFER, _nodesTextureBuffer);
+            glUniform1i(glGetUniformLocation(_pathTracingShader->_handle, "nodes"), 1);
+
+            glActiveTexture(GL_TEXTURE2);
+            glBindTexture(GL_TEXTURE_2D, _lastFrame);
+            glUniform1i(glGetUniformLocation(_pathTracingShader->_handle, "lastFrame"), 2);
+
+            _pathTracingShader->use();
+            glBindFramebuffer(GL_FRAMEBUFFER, pass1.FBO);
+            glBindVertexArray(pass1.vao);
+
+            glViewport(0, 0, _windowWidth, _windowHeight);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+
+            glBindVertexArray(0);
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            glUseProgram(0);
+
+            // pass 2
+            _pass2Shader->use();
+            glBindFramebuffer(GL_FRAMEBUFFER, pass2.FBO);
+            glBindVertexArray(pass2.vao);
+
+            for (int i = 0; i < pt1ColorAttachments.size(); i++) {
+                glActiveTexture(GL_TEXTURE0 + i);
+                glBindTexture(GL_TEXTURE_2D, pt1ColorAttachments[i]);
+                std::string uName = "texPass" + std::to_string(i);
+                glUniform1i(glGetUniformLocation(_pass2Shader->_handle, uName.c_str()), i);
+            }
+            
+            glViewport(0, 0, _windowWidth, _windowHeight);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+
+            glBindVertexArray(0);
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            glUseProgram(0);
+
+            // pass 3
+            _pass3Shader->use();
+            glBindFramebuffer(GL_FRAMEBUFFER, pass3.FBO);
+            glBindVertexArray(pass3.vao);
+
+            for (int i = 0; i < pt2ColorAttachments.size(); i++) {
+                glActiveTexture(GL_TEXTURE0 + i);
+                glBindTexture(GL_TEXTURE_2D, pt2ColorAttachments[i]);
+                std::string uName = "texPass" + std::to_string(i);
+                glUniform1i(glGetUniformLocation(_pass3Shader->_handle, uName.c_str()), i);
+            }
+            
+            glViewport(0, 0, _windowWidth, _windowHeight);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+
+            glBindVertexArray(0);
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            glUseProgram(0);
+        }
+        break;
+
+        case ShadowRenderMode::RTRT: {
+            // pass1
+            glm::vec3 lightPos = _directionlight->position;
+            glm::mat4 lightProjection, lightView, lightMatrix;
+            float size = 50.0f;
+            
+            lightProjection = glm::ortho(-size, size, -size, size, _shadowNear, _shadowFar);
+            lightView = glm::lookAt(lightPos, glm::vec3(0.0f), glm::vec3(0.0, 1.0, 0.0));
+            lightMatrix = lightProjection * lightView;
+
+            _shadowShader->use();
+            glViewport(0, 0, _shadowWidth, _shadowHeight);
+            _depthfbo->bind();
+            glClear(GL_DEPTH_BUFFER_BIT);
+            
+            _shadowShader->setMat4("uLightSpaceMatrix", lightMatrix);           
+            for(int i = 0; i < _objectlist.ModelList.size(); i++){
+                if(!_objectlist.visible[i]) continue;
+                if(series_flag && i<_serise.sequence.size() && _serise.max>-1 && _serise.sequence[i] != -1){
+                    if (_serise.sequence[i] != count/20) continue;
+                }
+                _shadowShader->setMat4("model", _objectlist.ModelList[i]->getModelMatrix());
+                _objectlist.ModelList[i]->draw();
+            }
+            _depthfbo->unbind();
+            
+            // reset viewport
+            glViewport(0, 0, _windowWidth, _windowHeight);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            // pass2
+            _gbufferfbo->bind();
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            _gbufferShader->use();
+            const glm::mat4 projection = _camera->getProjectionMatrix();
+            const glm::mat4 view = _camera->getViewMatrix();
+            _gbufferShader->setMat4("uProjectionMatrix", projection);
+            _gbufferShader->setMat4("uViewMatrix", view);
+            _gbufferShader->setMat4("uLightVP",lightMatrix);
+            _gbufferShader->setVec3("uLightPos", _directionlight->position);
+            _gbufferShader->setInt("uShadowMap",0);
+            _gbufferShader->setInt("uAlbedoMap",1);
+            glEnable(GL_TEXTURE0);
+            _depthmap->bind();
+            for(int i = 0; i < _objectlist.ModelList.size(); i++){
+                if(!_objectlist.visible[i]) continue;
+                if(series_flag && i<_serise.sequence.size() && _serise.max>-1 && _serise.sequence[i] != -1){
+                    if (_serise.sequence[i] != count/20) continue;
+                }
+                _gbufferShader->setMat4("uModelMatrix", _objectlist.ModelList[i]->getModelMatrix());
+                _gbufferShader->setFloat("roughness", _objectlist.roughness[i]);
+                _gbufferShader->setFloat("metallic", _objectlist.metallic[i]);
+                if(_objectlist.color_flag[i]) _gbufferShader->setVec3("uColor", _objectlist.Color[i]);
+                else _gbufferShader->setVec3("uColor", glm::vec3(1.0f));
+                if(!_objectlist.color_flag[i] && _texturelist.texture[_objectlist.TextureIndex[i]] != nullptr){
+                    glActiveTexture(GL_TEXTURE1);
+                    _texturelist.texture[_objectlist.TextureIndex[i]]->bind();
+                    _objectlist.ModelList[i]->draw();
+                    _texturelist.texture[_objectlist.TextureIndex[i]]->unbind();
+                }
+                else _objectlist.ModelList[i]->draw();
+            }
+            _gbufferfbo->unbind();
+            glEnable(GL_TEXTURE0);
+            _depthmap->unbind();
+
+            // pass3
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            _RTRTShader->use();
+            _RTRTShader->setMat4("uProjectionMatrix", projection);
+            _RTRTShader->setMat4("uViewMatrix", view);
+            _RTRTShader->setVec3("uLightDir", _directionlight->position);
+            _RTRTShader->setVec3("uCameraPos", _camera->position);
+            _RTRTShader->setVec3("uLightRadiance", _directionlight->radiance);
+
+            glActiveTexture(GL_TEXTURE0);_diffusetexuture->bind();
+            glActiveTexture(GL_TEXTURE1);_depthtexture->bind();
+            glActiveTexture(GL_TEXTURE2);_normaltexture->bind();
+            glActiveTexture(GL_TEXTURE3);_visibilitytexture->bind();
+            glActiveTexture(GL_TEXTURE4);_colortexture->bind();
+            glActiveTexture(GL_TEXTURE5);_positiontexture->bind();
+            glActiveTexture(GL_TEXTURE6);
+            glBindTexture(GL_TEXTURE_BUFFER, _trianglesTextureBuffer);
+            glUniform1i(glGetUniformLocation(_RTRTShader->_handle, "triangles"), 6);
+            glActiveTexture(GL_TEXTURE7);
+            glBindTexture(GL_TEXTURE_BUFFER, _nodesTextureBuffer);
+            glUniform1i(glGetUniformLocation(_RTRTShader->_handle, "nodes"), 7);
+
+            _RTRTShader->setInt("uGDiffuse",0);
+            _RTRTShader->setInt("uGDepth",1);
+            _RTRTShader->setInt("uGNormalWorld",2);
+            _RTRTShader->setInt("uGShadow",3);
+            _RTRTShader->setInt("uGColor",4);
+            _RTRTShader->setInt("uGPosition",5);
+            _RTRTShader->setInt("Width",_windowWidth);
+            _RTRTShader->setInt("Height",_windowHeight);
+            
+            // _RTRTShader->setInt("frameCounter", frameCounter++);
+
+            _fullscrennquad->draw();
+            _skybox->draw(projection, view);
+
+            glActiveTexture(GL_TEXTURE0);_diffusetexuture->unbind();
+            glActiveTexture(GL_TEXTURE1);_depthtexture->unbind();
+            glActiveTexture(GL_TEXTURE2);_normaltexture->unbind();
+            glActiveTexture(GL_TEXTURE3);_visibilitytexture->unbind();
+            glActiveTexture(GL_TEXTURE4);_colortexture->unbind();
+            glActiveTexture(GL_TEXTURE5);_positiontexture->unbind();
+            glActiveTexture(GL_TEXTURE6);glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            glActiveTexture(GL_TEXTURE7);glBindFramebuffer(GL_FRAMEBUFFER, 0);
         }
     }
 }
 
-void Scene::PathTracing() {
-    vec3 viewPos = vec3(_camera->position.x, _camera->position.y, _camera->position.z + 60.0f);
-    mat4 cameraRotate = _camera->getViewMatrix();
-    cameraRotate = inverse(cameraRotate);
-
-    // 传 uniform 给 pass1
-    glUseProgram(pass1.program);
-    glUniform3fv(glGetUniformLocation(pass1.program, "uCameraPos"), 1, value_ptr(viewPos));
-    glUniformMatrix4fv(glGetUniformLocation(pass1.program, "cameraRotate"), 1, GL_FALSE, value_ptr(cameraRotate));
-    glUniform1ui(glGetUniformLocation(pass1.program, "frameCounter"), frameCounter++);
-
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_BUFFER, _trianglesTextureBuffer);
-    glUniform1i(glGetUniformLocation(pass1.program, "triangles"), 0);
-
-    glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_BUFFER, _nodesTextureBuffer);
-    glUniform1i(glGetUniformLocation(pass1.program, "nodes"), 1);
-
-    glActiveTexture(GL_TEXTURE2);
-    glBindTexture(GL_TEXTURE_2D, _lastFrame);
-    glUniform1i(glGetUniformLocation(pass1.program, "lastFrame"), 2);
-
-    // 绘制
-    pass1.draw();
-    pass2.draw(pass1.colorAttachments);
-    pass3.draw(pass2.colorAttachments);
+void Scene::CreateScreenShot(char *prefix, int frame_id, unsigned int width, unsigned int height,
+        unsigned int color_max, unsigned int pixel_nbytes, GLubyte *pixels) {
+    size_t i, j, k, cur;
+    enum Constants { max_filename = 256 };
+    char filename[max_filename];
+    snprintf(filename, max_filename, "%s%d.ppm", prefix, frame_id);
+    FILE *f = fopen(filename, "w");
+    fprintf(f, "P3\n%d %d\n%d\n", width, height, 255);
+    for (i = 0; i < height; i++) {
+        for (j = 0; j < width; j++) {
+            cur = pixel_nbytes * ((height - i - 1) * width + j);
+            fprintf(f, "%3d %3d %3d ", pixels[cur], pixels[cur + 1], pixels[cur + 2]);
+        }
+        fprintf(f, "\n");
+    }
+    fclose(f);
 }
 
 void Scene::drawGUI()  {
@@ -1237,7 +1351,6 @@ void Scene::drawGUI()  {
         ImGui::Text("Check to open other windows");
         ImGui::Checkbox("File Control Window",&file_flags);
         ImGui::Checkbox("Object Control Window",&object_flags);
-        ImGui::Checkbox("NURBS Control Window",&NURBS_flags);
         ImGui::Separator();
 
         ImGui::Text("Choose ShadowRenderMode");
@@ -1247,7 +1360,8 @@ void Scene::drawGUI()  {
         ImGui::RadioButton("PCSS",(int *)&_ShadowRenderMode,(int)ShadowRenderMode::PCSS);
         ImGui::RadioButton("SSR",(int *)&_ShadowRenderMode,(int)ShadowRenderMode::SSR);ImGui::SameLine();
         ImGui::RadioButton("SSR_Filter",(int *)&_ShadowRenderMode,(int)ShadowRenderMode::SSR_Filter);ImGui::SameLine();
-        ImGui::RadioButton("Path_Tracing",(int *)&_ShadowRenderMode,(int)ShadowRenderMode::Path_Tracing);
+        ImGui::RadioButton("Path_Tracing",(int *)&_ShadowRenderMode,(int)ShadowRenderMode::Path_Tracing);ImGui::SameLine();
+        ImGui::RadioButton("RTRT",(int *)&_ShadowRenderMode,(int)ShadowRenderMode::RTRT);
         ImGui::Separator();
 
         ImGui::Text("Game Options");
@@ -1256,12 +1370,16 @@ void Scene::drawGUI()  {
         ImGui::RadioButton("Free camera",(int *)&_CameraMode,(int)CameraMode::Free);
         ImGui::Separator();
 
-        ImGui::Text("Choose ScreenShotMode");ImGui::SameLine();
-        ImGui::RadioButton("Normal",(int *)&_ScreenShotMode,(int)ScreenShotMode::Normal);ImGui::SameLine();
-        ImGui::RadioButton("RayTracing",(int *)&_ScreenShotMode,(int)ScreenShotMode::RayTracing);
-        if(ImGui::Button("Creat a ScreenShot")){
-            //TODO::把接口塞进去
+        ImGui::Text("Photo");
+        if(ImGui::Button("Create a Screen Shot")){
+            const GLuint FORMAT_NBYTES = 4;
+            GLubyte *pixels = new GLubyte[_windowWidth * _windowHeight * FORMAT_NBYTES];
+            glReadPixels(0, 0, _windowWidth, _windowHeight, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+            CreateScreenShot("screenshot", ScreenShotNum++, _windowWidth, _windowHeight, 255, 4, pixels);
+            std::cout << "Finish" << std::endl;
+            delete[] pixels;
         }
+
         ImGui::Separator();
         ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
         ImGui::Checkbox("wireframe", &wireframe);

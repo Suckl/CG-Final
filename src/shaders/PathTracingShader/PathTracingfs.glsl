@@ -21,8 +21,8 @@ uniform mat4 cameraRotate;
 
 // ----------------------------------------------------------------------------- //
 
-#define PI              3.1415926
-#define INF             114514.0
+#define PI              3.1415926535897932384626433832795
+#define INF             233333.0
 #define SIZE_TRIANGLE   9
 #define SIZE_BVHNODE    4
 
@@ -71,12 +71,6 @@ struct HitResult {
     vec3 normal;
     vec3 viewDir;
     Material material;
-};
-
-struct Reservoir {
-    int size;
-    int capacity;
-    int index;
 };
 
 // ----------------------------------------------------------------------------- //
@@ -347,6 +341,7 @@ HitResult hitBVH(Ray ray) {
 
 // ----------------------------------------------------------------------------- //
 
+// PBR part
 float DistributionGGX(vec3 N, vec3 H, float roughness) {
     float a2 = pow(roughness, 4.0);
     float NdotH = clamp(dot(N, H), 0.0, 1.0);
@@ -369,46 +364,75 @@ vec3 fresnelSchlick(vec3 F0, vec3 V, vec3 H) {
     return F0 + (1.0 - F0) * pow(1.0 - theta, 5.0);
 }
 
-vec3 PBRcolor(vec3 V, vec3 N, vec3 L, in Material material) {
-    // V - view N - normal L - wi
-    vec3 albedo = material.baseColor;
+vec3 PBRcolor(vec3 wi, vec3 wo, HitResult hit) {
+    float uRoughness = hit.material.roughness;
+    float uMetallic = hit.material.metallic;
+    vec3 albedo = hit.material.baseColor;
+
+    vec3 N = hit.normal;
+    vec3 V = normalize(wo);
     float NdotV = max(dot(N, V), 0.0);
+
     vec3 F0 = vec3(0.04); 
-    F0 = mix(F0, albedo, material.metallic);
+    F0 = mix(F0, albedo, uMetallic);
+    vec3 KS = F0;
+    vec3 KD = vec3(1.0) - KS;
+    KD *= 1.0 - uMetallic;
 
     vec3 Lo = vec3(0.0);
 
+    vec3 L = normalize(wi);
     vec3 H = normalize(V + L);
     float NdotL = max(dot(N, L), 0.0); 
 
-    vec3 radiance = vec3(30, 20, 10);
-
-    float NDF = DistributionGGX(N, H, material.roughness);   
-    float G   = GeometrySmith(N, V, L, material.roughness);
+    float NDF = DistributionGGX(N, H, uRoughness);   
+    float G   = GeometrySmith(N, V, L, uRoughness); 
     vec3 F = fresnelSchlick(F0, V, H);
 
     vec3 numerator    = NDF * G * F; 
     float denominator = max((4.0 * NdotL * NdotV), 0.001);
-    vec3 BRDF = numerator / denominator;
+    vec3 specular = numerator / denominator;
 
-    Lo += BRDF * radiance * NdotL;
-    // vec3 color = Lo + vec3(0.001) * texture2D(uAlbedoMap, vTextureCoord).rgb;
+    Lo += (KD * albedo / PI + specular) * NdotL;
     vec3 color = Lo;
-
     return color;
 }
 
 // ----------------------------------------------------------------------------- //
 
 // Importance Sampling
-vec3 SampleCosineHemisphere(float u, float v, vec3 N) {
-    float r = sqrt(u);
-    float theta = v * 2.0 * PI;
+vec3 SampleCosineHemisphere(float r1, float r2, vec3 N) {
+    float r = sqrt(r1);
+    float theta = r2 * 2.0 * PI;
     float x = r * cos(theta);
     float y = r * sin(theta);
     float z = sqrt(1.0 - x * x - y * y);
 
     vec3 L = toNormalHemisphere(vec3(x, y, z), N);
+    return L;
+}
+
+float CosinePDF(vec3 L, vec3 N) {
+    return dot(L, N) / PI;
+}
+
+vec3 SampleHemisphereGGX(float r1, float r2, out float pdf, vec3 N, vec3 V, float roughness){
+    vec2 E = vec2(r1, r2);
+
+    float a2 = pow(roughness,4);
+    float Phi = 2 * PI * E.x;
+    float CosTheta = sqrt( (1 - E.y) / ( 1 + (a2 - 1) * E.y ) );
+    float SinTheta = sqrt( 1 - CosTheta * CosTheta );
+
+    vec3 H;
+    H.x = SinTheta * cos( Phi );
+    H.y = SinTheta * sin( Phi );
+    H.z = CosTheta;
+
+    float d = ( CosTheta * a2 - CosTheta ) * CosTheta + 1;
+    float D = a2 / ( PI * d * d );
+    vec3 L = normalize(H * 2.0f * dot(V, H) - V);
+    pdf = D * CosTheta / (4 * dot (V, H));
     return L;
 }
 
@@ -423,28 +447,27 @@ vec3 pathTracing(HitResult hit, uint maxBounce) {
     for(uint bounce = 0u; bounce < maxBounce; bounce++) {
         vec3 V = -hit.viewDir;
         vec3 N = hit.normal;
-
+        float pdf;
+        
         vec2 uv = sobolVec2(frameCounter + 1u, bounce);
         uv = CranleyPattersonRotation(uv);
-        float r1 = uv.x;
-        float r2 = uv.y;
-        float r3 = rand();
 
-        vec3 wi = toNormalHemisphere(SampleHemisphere(uv.x, uv.y), hit.normal);
-        float cosine_o = max(0, dot(V, N)); 
-        float cosine_i = max(0, dot(wi, N)); 
+        vec3 L = SampleHemisphereGGX(uv.x, uv.y, pdf, N, V, hit.material.roughness);
+        L = toNormalHemisphere(L, N);
+
+        float cosine_o = max(0, dot(V, N));
+        float cosine_i = max(0, dot(L, N));
+
+        vec3 f_r = PBRcolor(L, V, hit);
 
         Ray randomRay;
         randomRay.startPoint = hit.hitPoint;
-        randomRay.direction = wi;
+        randomRay.direction = L;
         HitResult newHit = hitBVH(randomRay);
 
-        vec3 f_r = PBRcolor(V, N, wi, hit.material);
-        float pdf = 1.0 / (2.0 * PI);
-
         if(!newHit.isHit) {
-            vec3 skyColor = vec3(0);
-            Lo += history * skyColor *  f_r * cosine_i / pdf;
+            vec3 skyColor = vec3(0, 0, 0);
+            Lo += history * skyColor * f_r * cosine_i / pdf;
             break;
         }
         
@@ -467,8 +490,8 @@ void main() {
     
     ray.startPoint = uCameraPos;
     for(int i = 0; i < spp; ++i) {
-        vec2 AA = vec2((rand() - 0.5) / float(width), (rand() - 0.5) / float(height));
-        vec4 dir = cameraRotate * vec4(pix.xy + AA, -1.5, 0.0);
+        vec2 offset = vec2((rand() - 0.5) / float(width), (rand() - 0.5) / float(height));
+        vec4 dir = cameraRotate * vec4(pix.xy + offset, -1.5, 0.0);
         ray.direction = normalize(dir.xyz);
 
         // primary hit

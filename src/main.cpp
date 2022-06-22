@@ -7,7 +7,7 @@ Options getOptions(int argc, char* argv) {
 	options.windowTitle = "CG Final!";
 
 	options.windowWidth = 1280;
-	options.windowHeight = 720;
+	options.windowHeight = 1280;
 	options.windowResizable = false;
 	options.vSync = true;
 	options.msaa = true;

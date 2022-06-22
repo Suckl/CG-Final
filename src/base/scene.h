@@ -10,9 +10,11 @@
 #include"application.h"
 #include"framebuffer.h"
 #include"fullscreen_quad.h"
-#include "PathTracingResources.h"
+
+#include "bvh.h"
+
 enum class ShadowRenderMode {
-	None,ShadowMapping, PCF, PCSS, SSR, SSR_Filter, Path_Tracing
+	None,ShadowMapping, PCF, PCSS, SSR, SSR_Filter, Path_Tracing, RTRT
 };
 
 enum class ScreenShotMode {
@@ -53,6 +55,38 @@ struct Serise{
     int max;
 };
 
+struct Material {
+    vec3 emissive = vec3(0, 0, 0);
+    vec3 baseColor = vec3(1, 1, 1);
+    
+    float roughness = 0.5;
+    float metallic = 0.0;
+    float specular = 0.5;
+};
+
+struct Triangle {
+    vec3 p1, p2, p3;
+    vec3 n1, n2, n3;
+    Material material;
+};
+
+struct Triangle_encoded {
+    vec3 p1, p2, p3;
+    vec3 n1, n2, n3;
+
+    vec3 emissive;
+    vec3 baseColor;
+
+    vec3 material;
+};
+
+class RenderPass {
+public:
+    GLuint FBO = 0;
+    GLuint vao, vbo;
+    GLuint program;
+};
+
 class Scene:public Application{
 public:
     Scene(const Options& options);
@@ -73,14 +107,18 @@ private:
     std::shared_ptr<GLSLProgram> _shadowMappingShader;
     std::shared_ptr<GLSLProgram> _pcfShader;
     std::shared_ptr<GLSLProgram> _pcssShader;
-
-    std::shared_ptr<GLSLProgram> _pointShadowShader;
-    std::shared_ptr<GLSLProgram> _omnidirectionalShader;
     std::shared_ptr<GLSLProgram> _lightCubeShader;
 
     std::shared_ptr<GLSLProgram> _gbufferShader;
     std::shared_ptr<GLSLProgram> _ssrShader;
     std::shared_ptr<GLSLProgram> _filterShader;
+
+    std::shared_ptr<GLSLProgram> _pathTracingShader;
+    std::shared_ptr<GLSLProgram> _pass2Shader;
+    std::shared_ptr<GLSLProgram> _pass3Shader;
+
+    std::shared_ptr<GLSLProgram> _RTRTShader;
+    std::shared_ptr<GLSLProgram> _deferShader;
 
     // SSR resources
     std::unique_ptr<Framebuffer> _depthfbo;
@@ -99,12 +137,13 @@ private:
     std::unique_ptr<DataTexture> _beauty;
     std::unique_ptr<FullscreenQuad> _fullscrennquad;
 
-
     // Path Tracing resources
     std::vector<Triangle> triangles;
     BVHNode bvhNode;
     std::vector<Triangle_encoded> triangles_encoded;
     std::vector<BVHNode_encoded> nodes_encoded;
+    int nTriangles;
+    int nNodes;
 
     GLuint _trianglesTextureBuffer;
     GLuint _nodesTextureBuffer;
@@ -114,12 +153,9 @@ private:
     RenderPass pass2;
     RenderPass pass3;
 
-    std::unique_ptr<Framebuffer> _pathTracingfbo;
-    std::unique_ptr<Framebuffer> _pass2fbo;
-    std::unique_ptr<Framebuffer> _pass3fbo;
+    std::vector<GLuint> pt1ColorAttachments;
+    std::vector<GLuint> pt2ColorAttachments;
 
-    clock_t t1, t2;
-    double dt, fps;
     unsigned int frameCounter = 0;
 
     enum ShadowRenderMode _ShadowRenderMode=ShadowRenderMode::None;
@@ -133,6 +169,7 @@ private:
     const float cameraRotateSpeed = 0.1f;
 
     const unsigned int _shadowWidth = 2048, _shadowHeight = 2048;
+    const float _shadowNear = 0.1f, _shadowFar = 50.0f;
 
     void initShader();
     void initPathTracingResources();
@@ -162,6 +199,10 @@ private:
     void AddPrism(float r,float h,std::string name,int sides);
     void AddFrustum(float r1,float r2,float h,std::string name,int sides);
     void AddCone(float r,float h,std::string name);
+    int buildBVH(std::vector<Triangle>& triangles, std::vector<BVHNode>& nodes, int l, int r, int n);
 
-    void PathTracing();
+    // screen shot
+    void CreateScreenShot(char *prefix, int frame_id, unsigned int width, unsigned int height,
+        unsigned int color_max, unsigned int pixel_nbytes, GLubyte *pixels);
+    int ScreenShotNum = 0;
 };
