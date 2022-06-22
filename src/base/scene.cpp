@@ -1113,7 +1113,7 @@ void Scene::drawList(){
             // pass 1
             _pathTracingShader->use();
 
-            glUniform1ui(glGetUniformLocation(pass1.program, "frameCounter"), frameCounter++);
+            glUniform1ui(glGetUniformLocation(_pathTracingShader->_handle, "frameCounter"), frameCounter++);
             _pathTracingShader->setInt("width", _windowWidth);
             _pathTracingShader->setInt("height", _windowHeight);
 
